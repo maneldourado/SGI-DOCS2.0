@@ -3,9 +3,21 @@
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Upload, FileText, Loader2, Save, X } from 'lucide-react';
+import {
+  Upload,
+  FileText,
+  Loader2,
+  Save,
+  X,
+  CheckCircle2,
+  Zap,
+  Shield,
+  ArrowLeft,
+  FolderOpen,
+} from 'lucide-react';
 import Sidebar from '../Sidebar';
 import { uploadDocument } from '../lib/documents';
+import { pageStyles, moduleStyles } from '../styles';
 
 // ✅ REMOVE ESPAÇOS EM BRANCO EXTRAS
 function normalizeSpaces(text: string): string {
@@ -20,17 +32,14 @@ function removeFooterKeywords(text: string): string {
     /T[ÍI]TULO:\s*[^\n]*?(?=DATA\s+REVIS[ÃA]O:|ELABORA[ÇC][ÃA]O:|APROVA[ÇC][ÃA]O:|$)/gi,
     ''
   );
-
   result = result.replace(
     /DATA\s+REVIS[ÃA]O:\s*[^\n]*?(?=ELABORA[ÇC][ÃA]O:|APROVA[ÇC][ÃA]O:|P[ÁA]GINA:|$)/gi,
     ''
   );
-
   result = result.replace(
     /ELABORA[ÇC][ÃA]O:\s*[^\n]*?(?=APROVA[ÇC][ÃA]O:|P[ÁA]GINA:|$)/gi,
     ''
   );
-
   result = result.replace(/APROVA[ÇC][ÃA]O:\s*[^\n]*?(?=P[ÁA]GINA:|$)/gi, '');
   result = result.replace(/P[ÁA]GINA:\s*\d+\s*de\s*\d+/gi, '');
   result = result.replace(/P[ÁA]G:\s*\d+/gi, '');
@@ -40,7 +49,7 @@ function removeFooterKeywords(text: string): string {
   return result.trim();
 }
 
-// ✅ Extrai o título do nome do arquivo (remove extensão e substitui _ e -)
+// ✅ Extrai o título do nome do arquivo
 function extractTitleFromFileName(fileName: string): string {
   return fileName
     .replace(/\.pdf$/i, '')
@@ -66,7 +75,7 @@ export default function UploadPage() {
   const [category, setCategory] = useState('');
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(true);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
 
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>(
@@ -74,14 +83,12 @@ export default function UploadPage() {
   );
   const [removeExtraSpaces, setRemoveExtraSpaces] = useState(true);
 
-  // ✅ Aceita múltiplos arquivos
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setFiles(Array.from(e.target.files));
     }
   };
 
-  // ✅ Remove um arquivo da lista
   const removeFile = (index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
@@ -107,7 +114,6 @@ export default function UploadPage() {
   }
 
   const extractPDFText = async (file: File): Promise<string> => {
-    // Carrega pdf.js se ainda não estiver carregado
     if (!(window as any).pdfjsLib) {
       await new Promise<void>((resolve, reject) => {
         const script = document.createElement('script');
@@ -176,7 +182,6 @@ export default function UploadPage() {
     return fullText;
   };
 
-  // ✅ Processa vários arquivos em sequência
   const handleUpload = async () => {
     if (files.length === 0) {
       setMessage('Selecione pelo menos um arquivo');
@@ -197,7 +202,6 @@ export default function UploadPage() {
 
       try {
         const content = await extractPDFText(file);
-
         let finalContent = content;
 
         if (removeExtraSpaces) {
@@ -211,12 +215,10 @@ export default function UploadPage() {
         }
 
         if (!finalContent || finalContent.length < 5) {
-          console.warn(`Sem texto extraído em: ${file.name}`);
           errorCount++;
           continue;
         }
 
-        // ✅ Gera código e título automaticamente
         const autoCode = generateCodeFromFileName(file.name);
         const autoTitle = extractTitleFromFileName(file.name);
 
@@ -246,25 +248,16 @@ export default function UploadPage() {
   };
 
   const handleModuleChange = (module: string) => {
-    if (module === 'dashboard') {
-      router.push('/');
-    } else if (module === 'documentos') {
-      router.push('/');
-    } else if (module === 'configuracoes') {
-      router.push('/');
-    } else if (module === 'upload') {
-      // já está na página de upload
-    }
+    if (module === 'dashboard') router.push('/');
+    else if (module === 'documentos') router.push('/');
+    else if (module === 'configuracoes') router.push('/');
   };
 
+  const progressPercent =
+    progress.total > 0 ? (progress.current / progress.total) * 100 : 0;
+
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        backgroundColor: '#f9fafb',
-        display: 'flex',
-      }}
-    >
+    <div style={pageStyles.container}>
       <Sidebar
         activeModule="upload"
         onModuleChange={handleModuleChange}
@@ -272,279 +265,626 @@ export default function UploadPage() {
         setDarkMode={setDarkMode}
       />
 
-      <div style={{ flex: 1, minHeight: '100vh', backgroundColor: '#f9fafb' }}>
-        <main className="p-8">
-          <div className="max-w-6xl mx-auto">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              Enviar Documentos
-            </h1>
-            <p className="text-sm text-gray-500 mb-8">
+      <div style={pageStyles.mainContent}>
+        {/* Header */}
+        <header style={pageStyles.header}>
+          <div>
+            <h1 style={pageStyles.headerTitle}>Enviar Documentos</h1>
+            <p style={pageStyles.headerSubtitle}>
               Envie vários PDFs de uma vez. O título e o código serão gerados
-              automaticamente a partir do nome do arquivo.
+              automaticamente.
             </p>
+          </div>
+          <button
+            onClick={() => router.push('/')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              background: 'rgba(15, 30, 58, 0.6)',
+              border: '1px solid rgba(59, 130, 246, 0.2)',
+              borderRadius: '0.75rem',
+              padding: '0.625rem 1rem',
+              color: '#94a3b8',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            <ArrowLeft size={16} />
+            Voltar
+          </button>
+        </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Coluna Esquerda - Formulário */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-                <h2 className="text-lg font-bold text-gray-900 mb-4">
-                  Configurações
+        <main style={pageStyles.main}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1.2fr 1fr',
+              gap: '1.5rem',
+            }}
+          >
+            {/* Coluna Esquerda - Formulário */}
+            <div style={moduleStyles.card}>
+              <div style={moduleStyles.cardHeader}>
+                <h2 style={moduleStyles.cardTitle}>
+                  <Upload size={18} color="#3b82f6" />
+                  Configurações de Envio
                 </h2>
+              </div>
 
-                <div className="space-y-4">
-                  {/* Categoria */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {/* Categoria */}
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: '#94a3b8',
+                      marginBottom: '0.5rem',
+                    }}
+                  >
+                    Categoria
+                  </label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem 1rem',
+                      fontSize: '0.8rem',
+                      border: '1px solid rgba(59, 130, 246, 0.2)',
+                      borderRadius: '0.75rem',
+                      background: 'rgba(30, 58, 95, 0.2)',
+                      color: 'white',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="">Geral</option>
+                    <option value="Segurança da Informação">
+                      Segurança da Informação
+                    </option>
+                    <option value="Procedimentos">Procedimentos</option>
+                    <option value="Manuais">Manuais</option>
+                    <option value="Políticas">Políticas</option>
+                    <option value="Formulários">Formulários</option>
+                  </select>
+                </div>
+
+                {/* Configurações de Extração */}
+                <div
+                  style={{
+                    background: 'rgba(30, 58, 95, 0.2)',
+                    borderRadius: '0.75rem',
+                    padding: '1rem',
+                    border: '1px solid rgba(59, 130, 246, 0.1)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.75rem',
+                  }}
+                >
+                  <h3
+                    style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: '#cbd5e1',
+                      margin: 0,
+                    }}
+                  >
+                    Configurações de Extração
+                  </h3>
+
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Categoria
-                    </label>
-                    <select
-                      value={category}
-                      onChange={(e) => setCategory(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        color: '#94a3b8',
+                        marginBottom: '0.5rem',
+                      }}
                     >
-                      <option value="">Geral</option>
-                      <option value="Segurança da Informação">
-                        Segurança da Informação
-                      </option>
-                      <option value="Procedimentos">Procedimentos</option>
-                      <option value="Manuais">Manuais</option>
-                      <option value="Políticas">Políticas</option>
-                      <option value="Formulários">Formulários</option>
-                    </select>
-                  </div>
-
-                  {/* Configurações de extração */}
-                  <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                    <h3 className="text-sm font-bold text-gray-700">
-                      Configurações de Extração
-                    </h3>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Orientação do documento
-                      </label>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setOrientation('portrait')}
-                          className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold border-2 transition-all ${
-                            orientation === 'portrait'
-                              ? 'border-blue-600 bg-blue-50 text-blue-700'
-                              : 'border-gray-300 bg-white text-gray-600'
-                          }`}
-                        >
-                          📄 Retrato
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setOrientation('landscape')}
-                          className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold border-2 transition-all ${
-                            orientation === 'landscape'
-                              ? 'border-blue-600 bg-blue-50 text-blue-700'
-                              : 'border-gray-300 bg-white text-gray-600'
-                          }`}
-                        >
-                          📐 Paisagem
-                        </button>
-                      </div>
-                    </div>
-
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={removeExtraSpaces}
-                        onChange={(e) => setRemoveExtraSpaces(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 rounded"
-                      />
-                      <span className="text-sm text-gray-700">
-                        Excluir espaços em branco extras
-                      </span>
+                      Orientação do documento
                     </label>
-                  </div>
-
-                  {/* Upload de múltiplos arquivos */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Arquivos PDF *
-                    </label>
-                    <div className="border-2 border-dashed border-blue-300 rounded-lg p-8 text-center bg-blue-50">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="application/pdf"
-                        multiple
-                        onChange={handleFileSelect}
-                        className="hidden"
-                      />
-                      <Upload className="mx-auto text-blue-500" size={48} />
-                      <p className="mt-2 text-sm text-gray-600">
-                        Arraste seus PDFs aqui ou clique para selecionar
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Aceita múltiplos arquivos PDF
-                      </p>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button
                         type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700"
+                        onClick={() => setOrientation('portrait')}
+                        style={{
+                          flex: 1,
+                          padding: '0.625rem',
+                          borderRadius: '0.5rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          border: `1px solid ${
+                            orientation === 'portrait'
+                              ? '#3b82f6'
+                              : 'rgba(59, 130, 246, 0.2)'
+                          }`,
+                          background:
+                            orientation === 'portrait'
+                              ? 'rgba(59, 130, 246, 0.2)'
+                              : 'rgba(15, 30, 58, 0.4)',
+                          color:
+                            orientation === 'portrait' ? '#60a5fa' : '#94a3b8',
+                          cursor: 'pointer',
+                        }}
                       >
-                        Selecionar PDFs
+                        📄 Retrato
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOrientation('landscape')}
+                        style={{
+                          flex: 1,
+                          padding: '0.625rem',
+                          borderRadius: '0.5rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          border: `1px solid ${
+                            orientation === 'landscape'
+                              ? '#3b82f6'
+                              : 'rgba(59, 130, 246, 0.2)'
+                          }`,
+                          background:
+                            orientation === 'landscape'
+                              ? 'rgba(59, 130, 246, 0.2)'
+                              : 'rgba(15, 30, 58, 0.4)',
+                          color:
+                            orientation === 'landscape' ? '#60a5fa' : '#94a3b8',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        📐 Paisagem
                       </button>
                     </div>
                   </div>
 
-                  {/* Lista de arquivos selecionados */}
-                  {files.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-gray-700">
-                        {files.length} arquivo(s) selecionado(s):
-                      </p>
-                      <div className="max-h-60 overflow-y-auto space-y-2">
-                        {files.map((file, index) => (
-                          <div
-                            key={index}
-                            className="flex items-center justify-between bg-gray-50 p-3 rounded-lg"
-                          >
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <FileText
-                                className="text-blue-500 flex-shrink-0"
-                                size={20}
-                              />
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm truncate">{file.name}</p>
-                                <p className="text-xs text-gray-500">
-                                  {(file.size / 1024).toFixed(1)} KB
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => removeFile(index)}
-                              className="text-gray-400 hover:text-red-500 ml-2"
-                            >
-                              <X size={16} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Barra de progresso */}
-                  {uploading && progress.total > 0 && (
-                    <div>
-                      <div className="flex justify-between text-xs text-gray-600 mb-1">
-                        <span>
-                          Processando {progress.current} de {progress.total}
-                        </span>
-                        <span>
-                          {Math.round(
-                            (progress.current / progress.total) * 100
-                          )}
-                          %
-                        </span>
-                      </div>
-                      <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-blue-600 transition-all"
-                          style={{
-                            width: `${
-                              (progress.current / progress.total) * 100
-                            }%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Botão de enviar */}
-                  <button
-                    onClick={handleUpload}
-                    disabled={uploading || files.length === 0}
-                    className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem',
+                      color: '#cbd5e1',
+                      fontWeight: 500,
+                    }}
                   >
-                    {uploading ? (
-                      <>
-                        <Loader2 className="animate-spin" size={16} />
-                        Processando...
-                      </>
-                    ) : (
-                      <>
-                        <Save size={16} />
-                        Enviar {files.length > 0 ? `(${files.length})` : ''}
-                      </>
-                    )}
-                  </button>
-
-                  {message && (
-                    <div className="p-3 bg-blue-50 text-blue-700 rounded-lg text-sm">
-                      {message}
-                    </div>
-                  )}
+                    <input
+                      type="checkbox"
+                      checked={removeExtraSpaces}
+                      onChange={(e) => setRemoveExtraSpaces(e.target.checked)}
+                      style={{
+                        width: '1rem',
+                        height: '1rem',
+                        accentColor: '#3b82f6',
+                        cursor: 'pointer',
+                      }}
+                    />
+                    Excluir espaços em branco extras
+                  </label>
                 </div>
-              </div>
 
-              {/* Coluna Direita */}
-              <div className="space-y-6">
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-                  <h2 className="text-lg font-bold text-gray-900 mb-4">
-                    Como funciona
-                  </h2>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Nosso sistema utiliza OCR avançado para extrair texto dos
-                    seus PDFs.
-                  </p>
-                  <div className="space-y-3">
-                    {[
-                      {
-                        n: 1,
-                        t: 'Selecione os arquivos',
-                        d: 'Escolha vários PDFs de uma vez',
-                      },
-                      {
-                        n: 2,
-                        t: 'Extração automática',
-                        d: 'O OCR extrai o texto de cada um',
-                      },
-                      {
-                        n: 3,
-                        t: 'Título e código automáticos',
-                        d: 'Gerados a partir do nome do arquivo',
-                      },
-                      {
-                        n: 4,
-                        t: 'Disponível para busca',
-                        d: 'Encontre informações em segundos',
-                      },
-                    ].map((item) => (
-                      <div key={item.n} className="flex items-start gap-3">
-                        <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">
-                          {item.n}
-                        </span>
-                        <div>
-                          <p className="text-sm font-semibold">{item.t}</p>
-                          <p className="text-xs text-gray-500">{item.d}</p>
-                        </div>
-                      </div>
-                    ))}
+                {/* Upload de múltiplos arquivos */}
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: '#94a3b8',
+                      marginBottom: '0.5rem',
+                    }}
+                  >
+                    Arquivos PDF *
+                  </label>
+                  <div
+                    style={moduleStyles.uploadContainer}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor =
+                        'rgba(59, 130, 246, 0.6)';
+                      e.currentTarget.style.background =
+                        'rgba(30, 58, 95, 0.4)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor =
+                        'rgba(59, 130, 246, 0.3)';
+                      e.currentTarget.style.background =
+                        'rgba(30, 58, 95, 0.2)';
+                    }}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="application/pdf"
+                      multiple
+                      onChange={handleFileSelect}
+                      className="hidden"
+                      style={{ display: 'none' }}
+                    />
+                    <div style={moduleStyles.uploadIcon}>
+                      <Upload size={24} color="white" />
+                    </div>
+                    <p style={moduleStyles.uploadText}>
+                      Arraste seus PDFs aqui
+                    </p>
+                    <p style={moduleStyles.uploadSubtext}>
+                      ou clique para selecionar
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      style={moduleStyles.uploadButton}
+                    >
+                      <Upload size={14} />
+                      Selecionar PDFs
+                    </button>
                   </div>
                 </div>
 
-                <div className="bg-blue-50 rounded-xl border border-blue-100 p-6">
-                  <h2 className="text-lg font-bold text-blue-900 mb-4">
-                    💡 Dicas para melhores resultados
+                {/* Lista de arquivos */}
+                {files.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <p
+                      style={{
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        color: '#cbd5e1',
+                        margin: 0,
+                      }}
+                    >
+                      {files.length} arquivo(s) selecionado(s):
+                    </p>
+                    <div
+                      style={{
+                        maxHeight: '240px',
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.5rem',
+                      }}
+                    >
+                      {files.map((file, index) => (
+                        <div
+                          key={index}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.75rem',
+                            background: 'rgba(30, 58, 95, 0.3)',
+                            padding: '0.75rem',
+                            borderRadius: '0.75rem',
+                            border: '1px solid rgba(59, 130, 246, 0.15)',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '2.25rem',
+                              height: '2.25rem',
+                              background:
+                                'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                              borderRadius: '0.5rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <FileText size={16} color="white" />
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p
+                              style={{
+                                fontSize: '0.75rem',
+                                color: 'white',
+                                margin: 0,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {file.name}
+                            </p>
+                            <p
+                              style={{
+                                fontSize: '0.65rem',
+                                color: '#94a3b8',
+                                margin: '0.125rem 0 0',
+                              }}
+                            >
+                              {(file.size / 1024).toFixed(1)} KB
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeFile(index)}
+                            style={{
+                              color: '#64748b',
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '0.25rem',
+                            }}
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Barra de progresso */}
+                {uploading && progress.total > 0 && (
+                  <div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontSize: '0.7rem',
+                        color: '#94a3b8',
+                        marginBottom: '0.5rem',
+                      }}
+                    >
+                      <span>
+                        Processando {progress.current} de {progress.total}
+                      </span>
+                      <span>{Math.round(progressPercent)}%</span>
+                    </div>
+                    <div
+                      style={{
+                        height: '6px',
+                        background: 'rgba(59, 130, 246, 0.1)',
+                        borderRadius: '9999px',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: '100%',
+                          width: `${progressPercent}%`,
+                          background:
+                            'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                          transition: 'width 0.3s',
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Botão de enviar */}
+                <button
+                  onClick={handleUpload}
+                  disabled={uploading || files.length === 0}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.5rem',
+                    background:
+                      uploading || files.length === 0
+                        ? 'rgba(37, 99, 235, 0.4)'
+                        : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                    color: 'white',
+                    padding: '0.875rem',
+                    borderRadius: '0.75rem',
+                    fontWeight: 600,
+                    fontSize: '0.875rem',
+                    border: 'none',
+                    cursor:
+                      uploading || files.length === 0 ? 'not-allowed' : 'pointer',
+                    boxShadow:
+                      uploading || files.length === 0
+                        ? 'none'
+                        : '0 4px 16px rgba(37, 99, 235, 0.4)',
+                  }}
+                >
+                  {uploading ? (
+                    <>
+                      <Loader2
+                        size={16}
+                        style={{ animation: 'spin 1s linear infinite' }}
+                      />
+                      Processando...
+                    </>
+                  ) : (
+                    <>
+                      <Save size={16} />
+                      Enviar {files.length > 0 ? `(${files.length})` : ''}
+                    </>
+                  )}
+                </button>
+
+                {message && (
+                  <div
+                    style={{
+                      padding: '0.75rem 1rem',
+                      background: 'rgba(59, 130, 246, 0.1)',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                      color: '#93c5fd',
+                      borderRadius: '0.5rem',
+                      fontSize: '0.8rem',
+                    }}
+                  >
+                    {message}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Coluna Direita */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {/* Como funciona */}
+              <div style={moduleStyles.card}>
+                <div style={moduleStyles.cardHeader}>
+                  <h2 style={moduleStyles.cardTitle}>
+                    <CheckCircle2 size={18} color="#3b82f6" />
+                    Como funciona
                   </h2>
-                  <ul className="space-y-2 text-sm text-blue-800">
-                    <li>
-                      • Nomeie os arquivos de forma clara (ex: RQ-SMS-0001.pdf)
-                    </li>
-                    <li>• Use PDFs com texto nítido e legível</li>
-                    <li>• Evite PDFs protegidos por senha</li>
-                    <li>• O OCR suporta português e inglês</li>
-                    <li>
-                      • Selecione a orientação correta para melhor precisão
-                    </li>
-                  </ul>
                 </div>
+                <p
+                  style={{
+                    fontSize: '0.8rem',
+                    color: '#94a3b8',
+                    margin: '0 0 1rem',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Nosso sistema utiliza OCR avançado para extrair texto dos seus
+                  PDFs.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {[
+                    {
+                      n: 1,
+                      t: 'Selecione os arquivos',
+                      d: 'Escolha vários PDFs de uma vez',
+                    },
+                    {
+                      n: 2,
+                      t: 'Extração automática',
+                      d: 'O OCR extrai o texto de cada um',
+                    },
+                    {
+                      n: 3,
+                      t: 'Título e código automáticos',
+                      d: 'Gerados a partir do nome do arquivo',
+                    },
+                    {
+                      n: 4,
+                      t: 'Disponível para busca',
+                      d: 'Encontre informações em segundos',
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.n}
+                      style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}
+                    >
+                      <span
+                        style={{
+                          width: '1.5rem',
+                          height: '1.5rem',
+                          borderRadius: '50%',
+                          background:
+                            'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                          color: 'white',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {item.n}
+                      </span>
+                      <div>
+                        <p
+                          style={{
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                            color: 'white',
+                            margin: 0,
+                          }}
+                        >
+                          {item.t}
+                        </p>
+                        <p
+                          style={{
+                            fontSize: '0.7rem',
+                            color: '#94a3b8',
+                            margin: '0.125rem 0 0',
+                          }}
+                        >
+                          {item.d}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dicas */}
+              <div
+                style={{
+                  background:
+                    'linear-gradient(135deg, rgba(30, 58, 95, 0.6) 0%, rgba(15, 30, 58, 0.8) 100%)',
+                  borderRadius: '1rem',
+                  border: '1px solid rgba(59, 130, 246, 0.2)',
+                  padding: '1.5rem',
+                }}
+              >
+                <h2
+                  style={{
+                    fontSize: '1rem',
+                    fontWeight: 700,
+                    color: 'white',
+                    margin: '0 0 1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                  }}
+                >
+                  💡 Dicas para melhores resultados
+                </h2>
+                <ul
+                  style={{
+                    margin: 0,
+                    padding: 0,
+                    listStyle: 'none',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem',
+                    fontSize: '0.75rem',
+                    color: '#cbd5e1',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <li>• Nomeie os arquivos de forma clara (ex: RQ-SMS-0001.pdf)</li>
+                  <li>• Use PDFs com texto nítido e legível</li>
+                  <li>• Evite PDFs protegidos por senha</li>
+                  <li>• O OCR suporta português e inglês</li>
+                  <li>• Selecione a orientação correta para melhor precisão</li>
+                </ul>
+              </div>
+
+              {/* Features */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '0.5rem',
+                }}
+              >
+                {[
+                  { icon: CheckCircle2, label: 'OCR Inteligente' },
+                  { icon: Zap, label: 'Busca Avançada' },
+                  { icon: Shield, label: 'Seguro & Privado' },
+                ].map((item, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '0.375rem',
+                      padding: '0.75rem 0.5rem',
+                      background: 'rgba(15, 30, 58, 0.5)',
+                      border: '1px solid rgba(59, 130, 246, 0.15)',
+                      borderRadius: '0.75rem',
+                      fontSize: '0.65rem',
+                      color: '#94a3b8',
+                      fontWeight: 500,
+                      textAlign: 'center',
+                    }}
+                  >
+                    <item.icon size={16} color="#3b82f6" />
+                    {item.label}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
