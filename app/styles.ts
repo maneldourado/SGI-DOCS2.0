@@ -149,10 +149,9 @@ export const pageStyles = {
   container: {
     minHeight: '100vh',
     backgroundColor: '#f8fafc',
-    display: 'flex' as const,
   },
   mainContent: {
-    flex: 1,
+    marginLeft: '16rem',
     minHeight: '100vh',
     backgroundColor: '#f8fafc',
     padding: '0 2rem',
@@ -387,7 +386,7 @@ export const moduleStyles = {
   },
 };
 
-// ===== BUSCAR MODULE (COMPLETO) =====
+// ===== BUSCAR MODULE =====
 export const buscarModuleStyles = {
   container: {
     backgroundColor: 'white',
