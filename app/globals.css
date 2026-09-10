@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 255, 255, 255;
+  --background-end-rgb: 255, 255, 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 0, 0, 0;
+    --background-start-rgb: 255, 255, 255;
+    --background-end-rgb: 255, 255, 255;
+  }
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-start-rgb));
+}
+
+/* FORÇAR inputs, selects e textareas a terem texto PRETO e fundo BRANCO */
+input,
+select,
+textarea {
+  color: #000000 !important;
+  background-color: #ffffff !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af !important;
+}
+
+select {
+  color: #000000 !important;
+  background-color: #ffffff !important;
+}
+
+select option {
+  color: #000000 !important;
+  background-color: #ffffff !important;
+}
+
+/* Para evitar que selects fiquem transparentes */
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: none;
+}
+
+/* Corrigir hover e focus */
+input:focus,
+select:focus,
+textarea:focus {
+  color: #000000 !important;
+  background-color: #ffffff !important;
+  outline: none;
+}
+
+/* ⚠️ REMOVIDO: button { color: #ffffff !important; } e button { background-color: #ffffff !important; } */
+/* ⚠️ REMOVIDO: o bloco que forçava todos os botões a fundo branco */
+
+/* Agora, apenas botões com classes específicas do Tailwind terão estilo */
+button.bg-blue-600,
+button.bg-blue-500,
+button.bg-blue-700 {
+  color: #ffffff !important;
+  background-color: #2563eb !important;
+}
+
+/* Corrigir labels */
+label {
+  color: #000000 !important;
+}
+
+/* 🆕 ADICIONADO: Garantir que os botões da sidebar mantenham as cores inline */
+aside button {
+  background-color: transparent !important;
+  color: #f1f5f9 !important;
+}
+
+aside button:hover {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+  color: white !important;
+}
+
+aside button.bg-blue-600,
+aside button.bg-blue-500,
+aside button.bg-blue-700 {
+  background-color: #2563eb !important;
+  color: white !important;
+}
