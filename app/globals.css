@@ -155,3 +155,18 @@ aside button.bg-blue-700 {
     transform: translateY(0);
   }
 }
+
+
+body {
+  background: #050f1f;
+  color: white;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
