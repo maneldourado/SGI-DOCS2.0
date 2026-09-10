@@ -1,3 +1,4 @@
+/* app/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -19,52 +20,85 @@
 body {
   color: rgb(var(--foreground-rgb));
   background: rgb(var(--background-start-rgb));
+  margin: 0;
+  padding: 0;
 }
 
-/* FORÇAR inputs, selects e textareas a terem texto PRETO e fundo BRANCO */
-input,
-select,
-textarea {
+/* ============================================ */
+/* ✅ INPUTS - ESTILO PADRÃO (para formulários claros) */
+/* ============================================ */
+input:not([data-theme='dark']),
+select:not([data-theme='dark']),
+textarea:not([data-theme='dark']) {
   color: #000000 !important;
   background-color: #ffffff !important;
 }
 
-input::placeholder,
-textarea::placeholder {
+input:not([data-theme='dark'])::placeholder,
+textarea:not([data-theme='dark'])::placeholder {
   color: #9ca3af !important;
 }
 
-select {
-  color: #000000 !important;
-  background-color: #ffffff !important;
-}
-
-select option {
-  color: #000000 !important;
-  background-color: #ffffff !important;
-}
-
-/* Para evitar que selects fiquem transparentes */
-select {
+select:not([data-theme='dark']) {
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
   background-image: none;
 }
 
-/* Corrigir hover e focus */
-input:focus,
-select:focus,
-textarea:focus {
+select:not([data-theme='dark']) option {
+  color: #000000 !important;
+  background-color: #ffffff !important;
+}
+
+input:not([data-theme='dark']):focus,
+select:not([data-theme='dark']):focus,
+textarea:not([data-theme='dark']):focus {
   color: #000000 !important;
   background-color: #ffffff !important;
   outline: none;
 }
 
-/* ⚠️ REMOVIDO: button { color: #ffffff !important; } e button { background-color: #ffffff !important; } */
-/* ⚠️ REMOVIDO: o bloco que forçava todos os botões a fundo branco */
+/* ============================================ */
+/* ✅ LOGIN - INPUTS ESCUROS (usando data-theme="dark") */
+/* ============================================ */
+input[data-theme='dark'],
+textarea[data-theme='dark'] {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  background-color: transparent !important;
+  caret-color: #ffffff !important;
+}
 
-/* Agora, apenas botões com classes específicas do Tailwind terão estilo */
+input[data-theme='dark']::placeholder,
+textarea[data-theme='dark']::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1 !important;
+  -webkit-text-fill-color: #94a3b8 !important;
+}
+
+/* ✅ CORREÇÃO DEFINITIVA DO AUTOFILL */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: #ffffff !important;
+  -webkit-box-shadow: 0 0 0 1000px #0f1e3a inset !important;
+  box-shadow: 0 0 0 1000px #0f1e3a inset !important;
+  transition: background-color 5000s ease-in-out 0s !important;
+  caret-color: #ffffff !important;
+}
+
+/* Remove o ícone de "contact" do Chrome */
+input::-webkit-contacts-auto-fill-button,
+input::-webkit-credentials-auto-fill-button {
+  visibility: hidden;
+  display: none !important;
+}
+
+/* ============================================ */
+/* ✅ BOTÕES - AZUL */
+/* ============================================ */
 button.bg-blue-600,
 button.bg-blue-500,
 button.bg-blue-700 {
@@ -72,12 +106,16 @@ button.bg-blue-700 {
   background-color: #2563eb !important;
 }
 
-/* Corrigir labels */
+/* ============================================ */
+/* ✅ LABELS */
+/* ============================================ */
 label {
   color: #000000 !important;
 }
 
-/* 🆕 ADICIONADO: Garantir que os botões da sidebar mantenham as cores inline */
+/* ============================================ */
+/* ✅ SIDEBAR - GARANTIR CORES */
+/* ============================================ */
 aside button {
   background-color: transparent !important;
   color: #f1f5f9 !important;
@@ -93,4 +131,27 @@ aside button.bg-blue-500,
 aside button.bg-blue-700 {
   background-color: #2563eb !important;
   color: white !important;
+}
+
+/* ============================================ */
+/* ✅ ANIMAÇÕES */
+/* ============================================ */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
