@@ -117,7 +117,32 @@ export default function Sidebar({
           />
         </div>
       </div>
-
+      
+<button
+  onClick={async () => {
+    const { signOut } = await import('./lib/documents');
+    await signOut();
+    window.location.href = '/login';
+  }}
+  style={{
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.625rem 1rem',
+    borderRadius: '0.5rem',
+    fontSize: '0.875rem',
+    fontWeight: 500,
+    cursor: 'pointer',
+    border: 'none',
+    backgroundColor: 'transparent',
+    color: '#ef4444',
+    transition: 'all 0.2s',
+  }}
+>
+  <LogOut size={18} />
+  Sair
+</button>
       {/* Tema */}
       <div style={sidebarStyles.themeContainer}>
         <button
