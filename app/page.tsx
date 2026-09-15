@@ -59,7 +59,6 @@ function getErrorMessage(err: unknown): string {
   }
 }
 
-/** Formata o nome do usuário a partir do e-mail. */
 function formatNameFromEmail(email: string): string {
   if (!email) return '';
   const namePart = email.split('@')[0] || '';
@@ -74,16 +73,13 @@ function formatNameFromEmail(email: string): string {
     .join(' ');
 }
 
-/** Converte string em bytes reais (UTF-8). */
 function utf8ByteLength(text: string): number {
   if (typeof TextEncoder !== 'undefined') {
     return new TextEncoder().encode(text).length;
   }
-  // Fallback
   return unescape(encodeURIComponent(text)).length;
 }
 
-/** Formata bytes em unidade legível. */
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -92,7 +88,6 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-/** Ordena por uploaded_at DESC, sem mutar o array original. */
 function sortByUploadedAtDesc(docs: DocumentData[]): DocumentData[] {
   return [...docs].sort((a, b) => {
     const ta = new Date(a.uploaded_at).getTime();
@@ -181,7 +176,7 @@ function MetricCard({
 
 interface DocumentCardProps {
   doc: DocumentData;
-  onDelete: (id: string) => void;
+  onDelete: (id: number) => void;
   deleting?: boolean;
 }
 
@@ -193,10 +188,12 @@ function DocumentCard({ doc, onDelete, deleting }: DocumentCardProps) {
     const label = doc.code || doc.title || 'este documento';
     const ok =
       typeof window !== 'undefined'
-        ? window.confirm(`Excluir "${label}"? Essa ação não pode ser desfeita.`)
+        ? window.confirm(
+            `Excluir "${label}"? Essa ação não pode ser desfeita.`
+          )
         : true;
     if (!ok) return;
-    onDelete(String(doc.id));
+    onDelete(doc.id);
   };
 
   return (
@@ -246,7 +243,11 @@ function DocumentCard({ doc, onDelete, deleting }: DocumentCardProps) {
           cursor: deleting ? 'wait' : 'pointer',
         }}
       >
-        {deleting ? <Loader2 size={14} className="spin" /> : <MoreVertical size={14} />}
+        {deleting ? (
+          <Loader2 size={14} className="spin" />
+        ) : (
+          <MoreVertical size={14} />
+        )}
       </button>
     </div>
   );
@@ -276,7 +277,13 @@ function CategoryDonut({
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
       <div style={{ position: 'relative', width: '160px', height: '160px' }}>
-        <svg width="160" height="160" viewBox="0 0 160 160" role="img" aria-label="Distribuição por categoria">
+        <svg
+          width="160"
+          height="160"
+          viewBox="0 0 160 160"
+          role="img"
+          aria-label="Distribuição por categoria"
+        >
           <circle
             cx="80"
             cy="80"
@@ -415,7 +422,6 @@ function NotificationsDropdown({
 }: NotificationsDropdownProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Fecha ao clicar fora
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (
@@ -426,10 +432,10 @@ function NotificationsDropdown({
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () =>
+      document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
-  // Fecha com Esc
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -685,7 +691,7 @@ export default function Home() {
   const [userEmail, setUserEmail] = useState('');
   const [userInitial, setUserInitial] = useState('U');
   const [showNotifications, setShowNotifications] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
   // ----------------------------------------------------------
@@ -711,17 +717,15 @@ export default function Home() {
         if (cancelled) return;
 
         if (error) {
-          // Erro de rede ou sessão inválida.
-          // Se for 401 (sem sessão), vai pro login.
-          // Caso contrário, mantém o usuário na página (pode ser erro transitório).
-          const status =
-            (error as { status?: number }).status ?? undefined;
+          const status = (error as { status?: number }).status ?? undefined;
           if (status === 401 || status === 403) {
             router.replace('/login');
             return;
           }
-          console.error('Erro ao verificar autenticação:', getErrorMessage(error));
-          // Em erro transitório, libera a UI sem redirecionar.
+          console.error(
+            'Erro ao verificar autenticação:',
+            getErrorMessage(error)
+          );
           setAuthChecking(false);
           return;
         }
@@ -734,7 +738,10 @@ export default function Home() {
         applyUser(user.email || '');
       } catch (err) {
         if (cancelled) return;
-        console.error('Erro inesperado na autenticação:', getErrorMessage(err));
+        console.error(
+          'Erro inesperado na autenticação:',
+          getErrorMessage(err)
+        );
         router.replace('/login');
       } finally {
         if (!cancelled) setAuthChecking(false);
@@ -785,19 +792,16 @@ export default function Home() {
   useEffect(() => {
     if (authChecking) return;
 
-    const controller = new AbortController();
     let cancelled = false;
-
     setLoading(true);
 
-    getAllDocuments({ signal: controller.signal })
+    getAllDocuments()
       .then((docs) => {
         if (cancelled) return;
         setDocuments(sortByUploadedAtDesc(docs));
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        if (err instanceof DOMException && err.name === 'AbortError') return;
         console.error('Erro ao buscar documentos:', getErrorMessage(err));
       })
       .finally(() => {
@@ -806,7 +810,6 @@ export default function Home() {
 
     return () => {
       cancelled = true;
-      controller.abort();
     };
   }, [authChecking]);
 
@@ -825,7 +828,6 @@ export default function Home() {
     setShowNotifications((prev) => {
       const next = !prev;
       if (next) {
-        // Marca como lido ao abrir
         setLastSeenNotificationsAt(Date.now());
         setUnreadCount(0);
       }
@@ -836,11 +838,11 @@ export default function Home() {
   // ----------------------------------------------------------
   // Excluir documento
   // ----------------------------------------------------------
-  const handleDelete = useCallback(async (id: string) => {
+  const handleDelete = useCallback(async (id: number) => {
     setDeletingId(id);
     try {
       await deleteDocument(id);
-      setDocuments((prev) => prev.filter((d) => String(d.id) !== id));
+      setDocuments((prev) => prev.filter((d) => d.id !== id));
     } catch (err) {
       console.error('Erro ao excluir:', getErrorMessage(err));
       if (typeof window !== 'undefined') {
@@ -1055,7 +1057,9 @@ export default function Home() {
                     <div style={moduleStyles.uploadIcon}>
                       <Upload size={24} color="white" />
                     </div>
-                    <p style={moduleStyles.uploadText}>Arraste seu PDF aqui</p>
+                    <p style={moduleStyles.uploadText}>
+                      Arraste seu PDF aqui
+                    </p>
                     <p style={moduleStyles.uploadSubtext}>
                       ou clique para selecionar
                     </p>
@@ -1121,10 +1125,10 @@ export default function Home() {
                   {!loading &&
                     recentDocuments.map((doc) => (
                       <DocumentCard
-                        key={String(doc.id)}
+                        key={doc.id}
                         doc={doc}
                         onDelete={handleDelete}
-                        deleting={deletingId === String(doc.id)}
+                        deleting={deletingId === doc.id}
                       />
                     ))}
                   {!loading && documents.length === 0 && (
@@ -1205,7 +1209,7 @@ export default function Home() {
                 >
                   {recentActivity.map((doc) => (
                     <div
-                      key={String(doc.id)}
+                      key={doc.id}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -1251,7 +1255,9 @@ export default function Home() {
                           }}
                         >
                           Enviado em{' '}
-                          {new Date(doc.uploaded_at).toLocaleDateString('pt-BR')}{' '}
+                          {new Date(doc.uploaded_at).toLocaleDateString(
+                            'pt-BR'
+                          )}{' '}
                           às{' '}
                           {new Date(doc.uploaded_at).toLocaleTimeString(
                             'pt-BR',
@@ -1351,8 +1357,8 @@ export default function Home() {
                       lineHeight: 1.4,
                     }}
                   >
-                    Centralize, proteja e acesse seus documentos de forma rápida
-                    e segura.
+                    Centralize, proteja e acesse seus documentos de forma
+                    rápida e segura.
                   </p>
                   <button
                     type="button"
@@ -1460,7 +1466,6 @@ export default function Home() {
             </p>
           </div>
           <div style={pageStyles.headerActions}>
-            {/* Sino com dropdown */}
             <div style={{ position: 'relative' }}>
               <button
                 type="button"
@@ -1509,7 +1514,6 @@ export default function Home() {
               )}
             </div>
 
-            {/* Engrenagem → Configurações */}
             <button
               type="button"
               aria-label="Abrir configurações"
