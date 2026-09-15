@@ -41,6 +41,7 @@ import type { DocumentData } from './lib/supabase';
 // ============================================================
 
 const LAST_SEEN_NOTIFICATIONS_KEY = 'sgi:lastSeenNotificationsAt';
+const DARK_MODE_EVENT = 'sgi:darkModeChanged';
 const RECENT_DOCS_IN_DROPDOWN = 8;
 const RECENT_ACTIVITY_LIMIT = 5;
 const RECENT_DOCUMENTS_ON_DASHBOARD = 4;
@@ -96,11 +97,20 @@ function sortByUploadedAtDesc(docs: DocumentData[]): DocumentData[] {
   });
 }
 
+/**
+ * Retorna o timestamp da última vez que o usuário abriu as notificações.
+ * Na PRIMEIRA vez (sem chave no localStorage), inicializa com Date.now()
+ * para que documentos antigos NÃO sejam contados como não lidos.
+ */
 function getLastSeenNotificationsAt(): number {
   if (typeof window === 'undefined') return 0;
   try {
     const raw = window.localStorage.getItem(LAST_SEEN_NOTIFICATIONS_KEY);
-    if (!raw) return 0;
+    if (!raw) {
+      const now = Date.now();
+      window.localStorage.setItem(LAST_SEEN_NOTIFICATIONS_KEY, String(now));
+      return now;
+    }
     const n = Number(raw);
     return Number.isFinite(n) ? n : 0;
   } catch {
@@ -112,6 +122,16 @@ function setLastSeenNotificationsAt(ts: number): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(LAST_SEEN_NOTIFICATIONS_KEY, String(ts));
+  } catch {
+    /* ignora */
+  }
+}
+
+/** Reset do "visto" quando o usuário muda. */
+function resetLastSeenNotificationsAt(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(LAST_SEEN_NOTIFICATIONS_KEY);
   } catch {
     /* ignora */
   }
@@ -691,7 +711,7 @@ export default function Home() {
   const [userEmail, setUserEmail] = useState('');
   const [userInitial, setUserInitial] = useState('U');
   const [showNotifications, setShowNotifications] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [unreadCount, setUnreadCount] = useState(0);
 
   // ----------------------------------------------------------
@@ -701,9 +721,17 @@ export default function Home() {
     let cancelled = false;
 
     const applyUser = (email: string) => {
+      setUserEmail((prevEmail) => {
+        // Se o usuário mudou, reseta o "visto" para não vazar
+        // notificações de outro usuário.
+        if (prevEmail && prevEmail !== email) {
+          resetLastSeenNotificationsAt();
+        }
+        return email;
+      });
+
       const formatted = formatNameFromEmail(email) || 'Usuário';
       setUserName(formatted);
-      setUserEmail(email);
       setUserInitial(formatted.charAt(0).toUpperCase() || 'U');
     };
 
@@ -770,10 +798,11 @@ export default function Home() {
   }, [router]);
 
   // ----------------------------------------------------------
-  // Configurações
+  // Configurações + sincronização com ConfiguracoesModule
   // ----------------------------------------------------------
   useEffect(() => {
     let cancelled = false;
+
     loadSettings()
       .then((s) => {
         if (!cancelled) setDarkMode(Boolean(s?.darkMode));
@@ -781,8 +810,40 @@ export default function Home() {
       .catch((err) => {
         console.error('Erro ao carregar configurações:', getErrorMessage(err));
       });
+
+    // Escuta mudanças disparadas por ConfiguracoesModule
+    const handleDarkModeEvent = (e: Event) => {
+      const detail = (e as CustomEvent<{ darkMode?: boolean }>).detail;
+      if (typeof detail?.darkMode === 'boolean') {
+        setDarkMode(detail.darkMode);
+      } else {
+        // Fallback: recarrega do storage
+        loadSettings()
+          .then((s) => setDarkMode(Boolean(s?.darkMode)))
+          .catch(() => {
+            /* ignora */
+          });
+      }
+    };
+
+    window.addEventListener(DARK_MODE_EVENT, handleDarkModeEvent);
+
+    // Fallback extra: mudanças vindas de outra aba
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key && e.key.toLowerCase().includes('darkmode')) {
+        loadSettings()
+          .then((s) => setDarkMode(Boolean(s?.darkMode)))
+          .catch(() => {
+            /* ignora */
+          });
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
     return () => {
       cancelled = true;
+      window.removeEventListener(DARK_MODE_EVENT, handleDarkModeEvent);
+      window.removeEventListener('storage', handleStorage);
     };
   }, []);
 
@@ -824,22 +885,29 @@ export default function Home() {
     setUnreadCount(count);
   }, [documents]);
 
+  // Marca como visto quando o dropdown abre — efeito separado,
+  // longe do updater de estado (evita efeitos colaterais em StrictMode)
+  useEffect(() => {
+    if (showNotifications) {
+      setLastSeenNotificationsAt(Date.now());
+      setUnreadCount(0);
+    }
+  }, [showNotifications]);
+
   const handleOpenNotifications = useCallback(() => {
-    setShowNotifications((prev) => {
-      const next = !prev;
-      if (next) {
-        setLastSeenNotificationsAt(Date.now());
-        setUnreadCount(0);
-      }
-      return next;
-    });
+    setShowNotifications((prev) => !prev);
   }, []);
 
   // ----------------------------------------------------------
   // Excluir documento (id é string)
   // ----------------------------------------------------------
   const handleDelete = useCallback(async (id: string) => {
-    setDeletingId(id);
+    setDeletingIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+
     try {
       await deleteDocument(id);
       setDocuments((prev) => prev.filter((d) => d.id !== id));
@@ -851,7 +919,11 @@ export default function Home() {
         );
       }
     } finally {
-      setDeletingId(null);
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   }, []);
 
@@ -1128,7 +1200,7 @@ export default function Home() {
                         key={doc.id}
                         doc={doc}
                         onDelete={handleDelete}
-                        deleting={deletingId === doc.id}
+                        deleting={deletingIds.has(doc.id)}
                       />
                     ))}
                   {!loading && documents.length === 0 && (
