@@ -31,16 +31,16 @@ import DocumentosModule from './DocumentosModule';
 import { pageStyles, metricCardStyles, moduleStyles } from './styles';
 import { getAllDocuments, deleteDocument } from './lib/documents';
 import { supabase } from './lib/supabase';
+import { loadSettings } from './lib/settings';
 import type { DocumentData } from './lib/supabase';
 
-// ✅ MetricCard (dark)
+// ✅ MetricCard
 function MetricCard({
   icon: Icon,
   label,
   value,
   subtitle,
   iconBg,
-  iconColor,
   trend,
 }: {
   icon: React.ElementType;
@@ -48,7 +48,6 @@ function MetricCard({
   value: string;
   subtitle: string;
   iconBg: string;
-  iconColor: string;
   trend?: string;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -58,15 +57,13 @@ function MetricCard({
       style={{
         ...metricCardStyles.card,
         transform: hovered ? 'translateY(-4px)' : 'translateY(0)',
-        borderColor: hovered
-          ? 'rgba(59, 130, 246, 0.4)'
-          : 'rgba(59, 130, 246, 0.15)',
+        borderColor: hovered ? 'var(--border-hover)' : 'var(--border-primary)',
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
       <div style={metricCardStyles.iconContainer(iconBg)}>
-        <Icon size={22} color={iconColor} />
+        <Icon size={22} color="white" />
       </div>
       <div style={metricCardStyles.textContainer}>
         <p style={metricCardStyles.label}>{label}</p>
@@ -83,7 +80,7 @@ function MetricCard({
   );
 }
 
-// ✅ DocumentCard (dark)
+// ✅ DocumentCard
 function DocumentCard({
   doc,
   onDelete,
@@ -97,12 +94,8 @@ function DocumentCard({
     <div
       style={{
         ...moduleStyles.docItem,
-        background: hovered
-          ? 'rgba(30, 58, 95, 0.4)'
-          : 'rgba(30, 58, 95, 0.2)',
-        borderColor: hovered
-          ? 'rgba(59, 130, 246, 0.3)'
-          : 'rgba(59, 130, 246, 0.1)',
+        background: hovered ? 'var(--bg-card-hover)' : 'var(--bg-card)',
+        borderColor: hovered ? 'var(--border-hover)' : 'var(--border-primary)',
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -122,7 +115,7 @@ function DocumentCard({
         style={{
           fontSize: '0.65rem',
           background: 'rgba(59, 130, 246, 0.2)',
-          color: '#60a5fa',
+          color: 'var(--accent-light)',
           padding: '0.25rem 0.5rem',
           borderRadius: '9999px',
           fontWeight: 600,
@@ -134,7 +127,7 @@ function DocumentCard({
         onClick={() => onDelete(doc.id)}
         style={{
           ...moduleStyles.docMenu,
-          color: hovered ? '#ef4444' : '#64748b',
+          color: hovered ? '#ef4444' : 'var(--text-dim)',
         }}
       >
         <MoreVertical size={14} />
@@ -143,7 +136,7 @@ function DocumentCard({
   );
 }
 
-// ✅ Donut Chart (categorias)
+// ✅ Donut Chart
 function CategoryDonut({
   data,
   total,
@@ -206,13 +199,19 @@ function CategoryDonut({
             style={{
               fontSize: '1.5rem',
               fontWeight: 700,
-              color: 'white',
+              color: 'var(--text-primary)',
               margin: 0,
             }}
           >
             {total}
           </p>
-          <p style={{ fontSize: '0.65rem', color: '#94a3b8', margin: 0 }}>
+          <p
+            style={{
+              fontSize: '0.65rem',
+              color: 'var(--text-muted)',
+              margin: 0,
+            }}
+          >
             Documentos
           </p>
         </div>
@@ -245,10 +244,12 @@ function CategoryDonut({
                 flexShrink: 0,
               }}
             />
-            <span style={{ color: '#cbd5e1', flex: 1 }}>{item.label}</span>
-            <span style={{ color: 'white', fontWeight: 600 }}>
+            <span style={{ color: 'var(--text-secondary)', flex: 1 }}>
+              {item.label}
+            </span>
+            <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
               {item.value}{' '}
-              <span style={{ color: '#64748b', fontWeight: 400 }}>
+              <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>
                 ({total > 0 ? Math.round((item.value / total) * 100) : 0}%)
               </span>
             </span>
@@ -283,7 +284,6 @@ export default function Home() {
           return;
         }
 
-        // ✅ Formata o nome do usuário (ex: "lucas.goat" → "Lucas Goat")
         const email = user.email || '';
         const namePart = email.split('@')[0];
         const formattedName = namePart
@@ -306,6 +306,11 @@ export default function Home() {
     checkAuth();
   }, [router]);
 
+  // ✅ Carrega configurações (tema)
+  useEffect(() => {
+    loadSettings().then((s) => setDarkMode(s.darkMode));
+  }, []);
+
   // ✅ Buscar documentos
   useEffect(() => {
     if (authChecking) return;
@@ -326,7 +331,6 @@ export default function Home() {
     }
   };
 
-  // ✅ Cálculos
   const totalDocuments = documents.length;
   const totalCategories = new Set(documents.map((d) => d.category)).size;
   const todayDocs = documents.filter(
@@ -337,7 +341,6 @@ export default function Home() {
     0
   );
 
-  // ✅ Categorias para o donut
   const categoryColors = ['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#64748b'];
   const categoryMap = new Map<string, number>();
   documents.forEach((d) => {
@@ -351,7 +354,6 @@ export default function Home() {
     }))
     .slice(0, 5);
 
-  // ✅ Atividade recente (5 últimos)
   const recentActivity = documents.slice(0, 5);
 
   // ✅ Loading
@@ -363,7 +365,7 @@ export default function Home() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#050f1f',
+          background: 'var(--bg-primary)',
         }}
       >
         <div style={{ textAlign: 'center' }}>
@@ -385,12 +387,12 @@ export default function Home() {
           <Loader2
             size={24}
             style={{
-              color: '#3b82f6',
+              color: 'var(--accent)',
               animation: 'spin 1s linear infinite',
               margin: '0 auto 1rem',
             }}
           />
-          <p style={{ color: '#94a3b8', fontSize: '0.875rem' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
             Verificando autenticação...
           </p>
         </div>
@@ -410,7 +412,6 @@ export default function Home() {
               value={String(totalDocuments)}
               subtitle="Documentos no sistema"
               iconBg="linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)"
-              iconColor="white"
               trend="100%"
             />
             <MetricCard
@@ -419,7 +420,6 @@ export default function Home() {
               value={String(totalCategories)}
               subtitle="Categorias cadastradas"
               iconBg="linear-gradient(135deg, #10b981 0%, #059669 100%)"
-              iconColor="white"
             />
             <MetricCard
               icon={Clock3}
@@ -427,7 +427,6 @@ export default function Home() {
               value={String(todayDocs)}
               subtitle="Novos documentos enviados"
               iconBg="linear-gradient(135deg, #f59e0b 0%, #d97706 100%)"
-              iconColor="white"
               trend="100%"
             />
             <MetricCard
@@ -436,12 +435,11 @@ export default function Home() {
               value={`${(totalSize / 1024).toFixed(1)} KB`}
               subtitle="Espaço utilizado"
               iconBg="linear-gradient(135deg, #a855f7 0%, #9333ea 100%)"
-              iconColor="white"
               trend="100%"
             />
           </div>
 
-          {/* Grid Principal - 3 colunas */}
+          {/* Grid Principal */}
           <div
             style={{
               display: 'grid',
@@ -461,13 +459,13 @@ export default function Home() {
               <div style={moduleStyles.card}>
                 <div style={moduleStyles.cardHeader}>
                   <h2 style={moduleStyles.cardTitle}>
-                    <Upload size={18} color="#3b82f6" />
+                    <Upload size={18} color="var(--accent)" />
                     Enviar Novo Documento
                   </h2>
                   <span
                     style={{
                       fontSize: '0.65rem',
-                      color: '#94a3b8',
+                      color: 'var(--text-muted)',
                       background: 'rgba(59, 130, 246, 0.1)',
                       padding: '0.25rem 0.625rem',
                       borderRadius: '9999px',
@@ -511,15 +509,15 @@ export default function Home() {
                 </Link>
                 <div style={moduleStyles.uploadFeatures}>
                   <div style={moduleStyles.featureItem}>
-                    <CheckCircle2 size={14} color="#3b82f6" />
+                    <CheckCircle2 size={14} color="var(--accent)" />
                     OCR Inteligente
                   </div>
                   <div style={moduleStyles.featureItem}>
-                    <Zap size={14} color="#3b82f6" />
+                    <Zap size={14} color="var(--accent)" />
                     Busca Avançada
                   </div>
                   <div style={moduleStyles.featureItem}>
-                    <Shield size={14} color="#3b82f6" />
+                    <Shield size={14} color="var(--accent)" />
                     Seguro & Privado
                   </div>
                 </div>
@@ -529,14 +527,14 @@ export default function Home() {
               <div style={moduleStyles.card}>
                 <div style={moduleStyles.cardHeader}>
                   <h2 style={moduleStyles.cardTitle}>
-                    <Clock3 size={18} color="#3b82f6" />
+                    <Clock3 size={18} color="var(--accent)" />
                     Documentos Recentes
                   </h2>
                   <button
                     onClick={() => setActiveModule('documentos')}
                     style={{
                       fontSize: '0.7rem',
-                      color: '#3b82f6',
+                      color: 'var(--accent)',
                       background: 'none',
                       border: 'none',
                       cursor: 'pointer',
@@ -554,7 +552,7 @@ export default function Home() {
                     <p
                       style={{
                         textAlign: 'center',
-                        color: '#64748b',
+                        color: 'var(--text-dim)',
                         padding: '2rem 0',
                         fontSize: '0.8rem',
                       }}
@@ -574,7 +572,7 @@ export default function Home() {
                     <p
                       style={{
                         textAlign: 'center',
-                        color: '#64748b',
+                        color: 'var(--text-dim)',
                         padding: '2rem 0',
                         fontSize: '0.8rem',
                       }}
@@ -596,11 +594,10 @@ export default function Home() {
             >
               <BuscarDocumentosModule />
 
-              {/* Donut de Categorias */}
               <div style={moduleStyles.card}>
                 <div style={moduleStyles.cardHeader}>
                   <h2 style={moduleStyles.cardTitle}>
-                    <FolderOpen size={18} color="#3b82f6" />
+                    <FolderOpen size={18} color="var(--accent)" />
                     Documentos por Categoria
                   </h2>
                 </div>
@@ -620,14 +617,14 @@ export default function Home() {
               <div style={moduleStyles.card}>
                 <div style={moduleStyles.cardHeader}>
                   <h2 style={moduleStyles.cardTitle}>
-                    <Clock size={18} color="#3b82f6" />
+                    <Clock size={18} color="var(--accent)" />
                     Atividade Recente
                   </h2>
                   <button
                     onClick={() => setActiveModule('documentos')}
                     style={{
                       fontSize: '0.7rem',
-                      color: '#3b82f6',
+                      color: 'var(--accent)',
                       background: 'none',
                       border: 'none',
                       cursor: 'pointer',
@@ -655,7 +652,7 @@ export default function Home() {
                         alignItems: 'center',
                         gap: '0.75rem',
                         padding: '0.5rem 0',
-                        borderBottom: '1px solid rgba(59, 130, 246, 0.08)',
+                        borderBottom: '1px solid var(--border-primary)',
                       }}
                     >
                       <div
@@ -678,7 +675,7 @@ export default function Home() {
                           style={{
                             fontSize: '0.75rem',
                             fontWeight: 600,
-                            color: 'white',
+                            color: 'var(--text-primary)',
                             margin: 0,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -690,7 +687,7 @@ export default function Home() {
                         <p
                           style={{
                             fontSize: '0.65rem',
-                            color: '#94a3b8',
+                            color: 'var(--text-muted)',
                             margin: '0.125rem 0 0',
                           }}
                         >
@@ -710,7 +707,7 @@ export default function Home() {
                         style={{
                           fontSize: '0.6rem',
                           background: 'rgba(59, 130, 246, 0.15)',
-                          color: '#60a5fa',
+                          color: 'var(--accent-light)',
                           padding: '0.125rem 0.375rem',
                           borderRadius: '9999px',
                           fontWeight: 600,
@@ -718,14 +715,14 @@ export default function Home() {
                       >
                         {doc.category}
                       </span>
-                      <ChevronRight size={14} color="#64748b" />
+                      <ChevronRight size={14} color="var(--text-dim)" />
                     </div>
                   ))}
                   {recentActivity.length === 0 && (
                     <p
                       style={{
                         textAlign: 'center',
-                        color: '#64748b',
+                        color: 'var(--text-dim)',
                         padding: '2rem 0',
                         fontSize: '0.75rem',
                       }}
@@ -736,7 +733,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Banner SGI Docs */}
+              {/* Banner */}
               <div
                 style={{
                   ...moduleStyles.card,
@@ -869,16 +866,16 @@ export default function Home() {
                       alignItems: 'center',
                       gap: '0.375rem',
                       padding: '0.5rem',
-                      background: 'rgba(15, 30, 58, 0.5)',
-                      border: '1px solid rgba(59, 130, 246, 0.15)',
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border-primary)',
                       borderRadius: '0.5rem',
                       fontSize: '0.65rem',
-                      color: '#94a3b8',
+                      color: 'var(--text-muted)',
                       fontWeight: 500,
                       justifyContent: 'center',
                     }}
                   >
-                    <item.icon size={12} color="#3b82f6" />
+                    <item.icon size={12} color="var(--accent)" />
                     {item.label}
                   </div>
                 ))}
@@ -915,7 +912,6 @@ export default function Home() {
             </p>
           </div>
           <div style={pageStyles.headerActions}>
-            {/* ✅ Barra de pesquisa REMOVIDA */}
             <button style={pageStyles.headerIconButton}>
               <Bell size={16} />
             </button>
@@ -928,7 +924,7 @@ export default function Home() {
                 style={{
                   fontSize: '0.75rem',
                   fontWeight: 600,
-                  color: 'white',
+                  color: 'var(--text-primary)',
                   margin: 0,
                 }}
               >
@@ -937,7 +933,7 @@ export default function Home() {
               <p
                 style={{
                   fontSize: '0.65rem',
-                  color: '#94a3b8',
+                  color: 'var(--text-muted)',
                   margin: 0,
                 }}
               >
