@@ -593,7 +593,7 @@ export default function LoginPage() {
               }}
             >
               <Shield size={12} />
-              Sistema seguro e em conformidade com a LGPD
+              Sistema seguro && utilizando SUPABASE
             </div>
           </div>
         </div>
