@@ -13,21 +13,17 @@ import {
   Zap,
   Shield,
   ArrowLeft,
-  FolderOpen,
 } from 'lucide-react';
 import Sidebar from '../Sidebar';
 import { uploadDocument } from '../lib/documents';
 import { pageStyles, moduleStyles } from '../styles';
 
-// ✅ REMOVE ESPAÇOS EM BRANCO EXTRAS
 function normalizeSpaces(text: string): string {
   return text.replace(/\s{2,}/g, ' ').trim();
 }
 
-// ✅ REMOVE RODAPÉ USANDO REGEX
 function removeFooterKeywords(text: string): string {
   let result = text;
-
   result = result.replace(
     /T[ÍI]TULO:\s*[^\n]*?(?=DATA\s+REVIS[ÃA]O:|ELABORA[ÇC][ÃA]O:|APROVA[ÇC][ÃA]O:|$)/gi,
     ''
@@ -45,11 +41,9 @@ function removeFooterKeywords(text: string): string {
   result = result.replace(/P[ÁA]G:\s*\d+/gi, '');
   result = result.replace(/C[ÓO]PIA\s+ELETR[ÔO]NICA/gi, '');
   result = result.replace(/\s{2,}/g, ' ');
-
   return result.trim();
 }
 
-// ✅ Extrai o título do nome do arquivo
 function extractTitleFromFileName(fileName: string): string {
   return fileName
     .replace(/\.pdf$/i, '')
@@ -58,7 +52,6 @@ function extractTitleFromFileName(fileName: string): string {
     .trim();
 }
 
-// ✅ Gera um código automático baseado no nome do arquivo
 function generateCodeFromFileName(fileName: string): string {
   const base = fileName
     .replace(/\.pdf$/i, '')
@@ -83,10 +76,55 @@ export default function UploadPage() {
   );
   const [removeExtraSpaces, setRemoveExtraSpaces] = useState(true);
 
+  // ✅ Drag & Drop states
+  const [isDragging, setIsDragging] = useState(false);
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setFiles(Array.from(e.target.files));
+      const newFiles = Array.from(e.target.files).filter((f) =>
+        f.name.toLowerCase().endsWith('.pdf')
+      );
+      setFiles((prev) => [...prev, ...newFiles]);
     }
+  };
+
+  // ✅ Drag & Drop handlers
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Só desativa se sair completamente da área
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDragging(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    const pdfFiles = droppedFiles.filter((f) =>
+      f.name.toLowerCase().endsWith('.pdf')
+    );
+
+    if (pdfFiles.length === 0) {
+      setMessage('⚠️ Apenas arquivos PDF são aceitos.');
+      return;
+    }
+
+    setFiles((prev) => [...prev, ...pdfFiles]);
+    setMessage(`✅ ${pdfFiles.length} arquivo(s) adicionado(s).`);
   };
 
   const removeFile = (index: number) => {
@@ -96,19 +134,15 @@ export default function UploadPage() {
   function preprocessImage(canvas: HTMLCanvasElement): HTMLCanvasElement {
     const ctx = canvas.getContext('2d');
     if (!ctx) return canvas;
-
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
-
     for (let i = 0; i < data.length; i += 4) {
       const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-      const threshold = 140;
-      const val = gray < threshold ? 0 : 255;
+      const val = gray < 140 ? 0 : 255;
       data[i] = val;
       data[i + 1] = val;
       data[i + 2] = val;
     }
-
     ctx.putImageData(imageData, 0, 0);
     return canvas;
   }
@@ -145,7 +179,6 @@ export default function UploadPage() {
         canvas.height = viewport.height;
         const context = canvas.getContext('2d');
         await page.render({ canvasContext: context, viewport }).promise;
-
         const processedCanvas = preprocessImage(canvas);
         const imageData = processedCanvas.toDataURL('image/png');
 
@@ -165,20 +198,16 @@ export default function UploadPage() {
           const Tesseract = (window as any).Tesseract;
           const result = await Tesseract.recognize(imageData, 'por+eng', {
             tessedit_psm: 6,
-            tessedit_char_whitelist:
-              'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-/:().,;áéíóúâêôãõçàüÁÉÍÓÚÂÊÔÃÕÇÀÜ',
             timeout: 60000,
           });
-
           fullText += result.data.text + '\n';
-        } catch (error) {
+        } catch {
           fullText += pageText + '\n';
         }
       } else {
         fullText += pageText + '\n';
       }
     }
-
     return fullText;
   };
 
@@ -231,7 +260,7 @@ export default function UploadPage() {
         });
 
         successCount++;
-      } catch (error: any) {
+      } catch (error) {
         console.error(`Erro no arquivo ${file.name}:`, error);
         errorCount++;
       }
@@ -266,7 +295,6 @@ export default function UploadPage() {
       />
 
       <div style={pageStyles.mainContent}>
-        {/* Header */}
         <header style={pageStyles.header}>
           <div>
             <h1 style={pageStyles.headerTitle}>Enviar Documentos</h1>
@@ -304,7 +332,7 @@ export default function UploadPage() {
               gap: '1.5rem',
             }}
           >
-            {/* Coluna Esquerda - Formulário */}
+            {/* Coluna Esquerda */}
             <div style={moduleStyles.card}>
               <div style={moduleStyles.cardHeader}>
                 <h2 style={moduleStyles.cardTitle}>
@@ -313,7 +341,9 @@ export default function UploadPage() {
                 </h2>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div
+                style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+              >
                 {/* Categoria */}
                 <div>
                   <label
@@ -328,17 +358,24 @@ export default function UploadPage() {
                     Categoria
                   </label>
                   <select
+                    data-theme="dark"
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
                     style={{
                       width: '100%',
                       padding: '0.75rem 1rem',
+                      paddingRight: '2.5rem',
                       fontSize: '0.8rem',
                       border: '1px solid rgba(59, 130, 246, 0.2)',
                       borderRadius: '0.75rem',
-                      background: 'rgba(30, 58, 95, 0.2)',
+                      background: '#0f1e3a',
                       color: 'white',
                       outline: 'none',
+                      appearance: 'none',
+                      backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 0.75rem center',
+                      backgroundSize: '1rem',
                     }}
                   >
                     <option value="">Geral</option>
@@ -432,7 +469,9 @@ export default function UploadPage() {
                               ? 'rgba(59, 130, 246, 0.2)'
                               : 'rgba(15, 30, 58, 0.4)',
                           color:
-                            orientation === 'landscape' ? '#60a5fa' : '#94a3b8',
+                            orientation === 'landscape'
+                              ? '#60a5fa'
+                              : '#94a3b8',
                           cursor: 'pointer',
                         }}
                       >
@@ -453,21 +492,16 @@ export default function UploadPage() {
                     }}
                   >
                     <input
+                      data-theme="dark"
                       type="checkbox"
                       checked={removeExtraSpaces}
                       onChange={(e) => setRemoveExtraSpaces(e.target.checked)}
-                      style={{
-                        width: '1rem',
-                        height: '1rem',
-                        accentColor: '#3b82f6',
-                        cursor: 'pointer',
-                      }}
                     />
                     Excluir espaços em branco extras
                   </label>
                 </div>
 
-                {/* Upload de múltiplos arquivos */}
+                {/* ✅ Upload com Drag & Drop */}
                 <div>
                   <label
                     style={{
@@ -481,18 +515,26 @@ export default function UploadPage() {
                     Arquivos PDF *
                   </label>
                   <div
-                    style={moduleStyles.uploadContainer}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor =
-                        'rgba(59, 130, 246, 0.6)';
-                      e.currentTarget.style.background =
-                        'rgba(30, 58, 95, 0.4)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor =
-                        'rgba(59, 130, 246, 0.3)';
-                      e.currentTarget.style.background =
-                        'rgba(30, 58, 95, 0.2)';
+                    onDragEnter={handleDragEnter}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                      border: `2px dashed ${
+                        isDragging
+                          ? '#3b82f6'
+                          : 'rgba(59, 130, 246, 0.3)'
+                      }`,
+                      borderRadius: '1rem',
+                      padding: '2.5rem',
+                      textAlign: 'center',
+                      background: isDragging
+                        ? 'rgba(59, 130, 246, 0.15)'
+                        : 'rgba(30, 58, 95, 0.2)',
+                      transition: 'all 0.2s',
+                      cursor: 'pointer',
+                      transform: isDragging ? 'scale(1.02)' : 'scale(1)',
                     }}
                   >
                     <input
@@ -501,22 +543,66 @@ export default function UploadPage() {
                       accept="application/pdf"
                       multiple
                       onChange={handleFileSelect}
-                      className="hidden"
                       style={{ display: 'none' }}
                     />
-                    <div style={moduleStyles.uploadIcon}>
+                    <div
+                      style={{
+                        width: '3.5rem',
+                        height: '3.5rem',
+                        background:
+                          'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        margin: '0 auto 1rem',
+                        boxShadow: '0 8px 24px rgba(37, 99, 235, 0.4)',
+                      }}
+                    >
                       <Upload size={24} color="white" />
                     </div>
-                    <p style={moduleStyles.uploadText}>
-                      Arraste seus PDFs aqui
+                    <p
+                      style={{
+                        fontSize: '0.9rem',
+                        color: 'white',
+                        margin: '0.5rem 0 0',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {isDragging
+                        ? 'Solte os arquivos aqui!'
+                        : 'Arraste seus PDFs aqui'}
                     </p>
-                    <p style={moduleStyles.uploadSubtext}>
+                    <p
+                      style={{
+                        fontSize: '0.75rem',
+                        color: '#94a3b8',
+                        margin: '0.25rem 0 1rem',
+                      }}
+                    >
                       ou clique para selecionar
                     </p>
                     <button
                       type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      style={moduleStyles.uploadButton}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                      }}
+                      style={{
+                        background:
+                          'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                        color: 'white',
+                        padding: '0.625rem 1.5rem',
+                        borderRadius: '0.75rem',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+                      }}
                     >
                       <Upload size={14} />
                       Selecionar PDFs
@@ -526,7 +612,13 @@ export default function UploadPage() {
 
                 {/* Lista de arquivos */}
                 {files.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.5rem',
+                    }}
+                  >
                     <p
                       style={{
                         fontSize: '0.75rem',
@@ -675,7 +767,9 @@ export default function UploadPage() {
                     fontSize: '0.875rem',
                     border: 'none',
                     cursor:
-                      uploading || files.length === 0 ? 'not-allowed' : 'pointer',
+                      uploading || files.length === 0
+                        ? 'not-allowed'
+                        : 'pointer',
                     boxShadow:
                       uploading || files.length === 0
                         ? 'none'
@@ -716,8 +810,9 @@ export default function UploadPage() {
             </div>
 
             {/* Coluna Direita */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {/* Como funciona */}
+            <div
+              style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}
+            >
               <div style={moduleStyles.card}>
                 <div style={moduleStyles.cardHeader}>
                   <h2 style={moduleStyles.cardTitle}>
@@ -736,32 +831,26 @@ export default function UploadPage() {
                   Nosso sistema utiliza OCR avançado para extrair texto dos seus
                   PDFs.
                 </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.75rem',
+                  }}
+                >
                   {[
-                    {
-                      n: 1,
-                      t: 'Selecione os arquivos',
-                      d: 'Escolha vários PDFs de uma vez',
-                    },
-                    {
-                      n: 2,
-                      t: 'Extração automática',
-                      d: 'O OCR extrai o texto de cada um',
-                    },
-                    {
-                      n: 3,
-                      t: 'Título e código automáticos',
-                      d: 'Gerados a partir do nome do arquivo',
-                    },
-                    {
-                      n: 4,
-                      t: 'Disponível para busca',
-                      d: 'Encontre informações em segundos',
-                    },
+                    { n: 1, t: 'Selecione os arquivos', d: 'Arraste ou clique para escolher vários PDFs' },
+                    { n: 2, t: 'Extração automática', d: 'O OCR extrai o texto de cada um' },
+                    { n: 3, t: 'Título e código automáticos', d: 'Gerados a partir do nome do arquivo' },
+                    { n: 4, t: 'Disponível para busca', d: 'Encontre informações em segundos' },
                   ].map((item) => (
                     <div
                       key={item.n}
-                      style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '0.75rem',
+                      }}
                     >
                       <span
                         style={{
@@ -807,7 +896,6 @@ export default function UploadPage() {
                 </div>
               </div>
 
-              {/* Dicas */}
               <div
                 style={{
                   background:
@@ -847,11 +935,10 @@ export default function UploadPage() {
                   <li>• Use PDFs com texto nítido e legível</li>
                   <li>• Evite PDFs protegidos por senha</li>
                   <li>• O OCR suporta português e inglês</li>
-                  <li>• Selecione a orientação correta para melhor precisão</li>
+                  <li>• Arraste vários arquivos de uma vez para agilizar</li>
                 </ul>
               </div>
 
-              {/* Features */}
               <div
                 style={{
                   display: 'grid',
