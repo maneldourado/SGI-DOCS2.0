@@ -176,7 +176,7 @@ function MetricCard({
 
 interface DocumentCardProps {
   doc: DocumentData;
-  onDelete: (id: number) => void;
+  onDelete: (id: string) => void;
   deleting?: boolean;
 }
 
@@ -691,7 +691,7 @@ export default function Home() {
   const [userEmail, setUserEmail] = useState('');
   const [userInitial, setUserInitial] = useState('U');
   const [showNotifications, setShowNotifications] = useState(false);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
   // ----------------------------------------------------------
@@ -787,7 +787,7 @@ export default function Home() {
   }, []);
 
   // ----------------------------------------------------------
-  // Buscar documentos
+  // Buscar documentos (getAllDocuments não aceita argumentos)
   // ----------------------------------------------------------
   useEffect(() => {
     if (authChecking) return;
@@ -836,9 +836,9 @@ export default function Home() {
   }, []);
 
   // ----------------------------------------------------------
-  // Excluir documento
+  // Excluir documento (id é string)
   // ----------------------------------------------------------
-  const handleDelete = useCallback(async (id: number) => {
+  const handleDelete = useCallback(async (id: string) => {
     setDeletingId(id);
     try {
       await deleteDocument(id);
