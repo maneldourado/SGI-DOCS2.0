@@ -11,24 +11,17 @@ import {
   Clock3,
   HardDrive,
   MoreVertical,
-  Database,
   CheckCircle2,
   Zap,
   Shield,
   Loader2,
   ArrowRight,
-  Search,
   Bell,
   Settings as SettingsIcon,
   ChevronRight,
   TrendingUp,
-  Award,
-  FileCheck,
-  FileSpreadsheet,
-  File,
   ScanText,
   Lock,
-  ArrowUp,
 } from 'lucide-react';
 import Link from 'next/link';
 import Sidebar from './Sidebar';
@@ -225,7 +218,14 @@ function CategoryDonut({
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem',
+        }}
+      >
         {data.map((item, i) => (
           <div
             key={i}
@@ -266,7 +266,9 @@ export default function Home() {
   const [authChecking, setAuthChecking] = useState(true);
   const [activeModule, setActiveModule] = useState('dashboard');
   const [darkMode, setDarkMode] = useState(true);
-  const [userName, setUserName] = useState('Administrador');
+  const [userName, setUserName] = useState('');
+  const [userEmail, setUserEmail] = useState('');
+  const [userInitial, setUserInitial] = useState('U');
 
   // ✅ Verifica autenticação
   useEffect(() => {
@@ -281,8 +283,18 @@ export default function Home() {
           return;
         }
 
-        const name = user.email?.split('@')[0] || 'Usuário';
-        setUserName(name.charAt(0).toUpperCase() + name.slice(1));
+        // ✅ Formata o nome do usuário (ex: "lucas.goat" → "Lucas Goat")
+        const email = user.email || '';
+        const namePart = email.split('@')[0];
+        const formattedName = namePart
+          .replace(/[._-]/g, ' ')
+          .split(' ')
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+
+        setUserName(formattedName);
+        setUserEmail(email);
+        setUserInitial(formattedName.charAt(0).toUpperCase());
       } catch (err) {
         console.error('Erro ao verificar autenticação:', err);
         router.push('/login');
@@ -437,8 +449,14 @@ export default function Home() {
               gap: '1.25rem',
             }}
           >
-            {/* Coluna 1 - Enviar + Documentos Recentes */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {/* Coluna 1 */}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1.25rem',
+              }}
+            >
               {/* Card de Envio */}
               <div style={moduleStyles.card}>
                 <div style={moduleStyles.cardHeader}>
@@ -466,12 +484,16 @@ export default function Home() {
                   <div
                     style={moduleStyles.uploadContainer}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.6)';
-                      e.currentTarget.style.background = 'rgba(30, 58, 95, 0.4)';
+                      e.currentTarget.style.borderColor =
+                        'rgba(59, 130, 246, 0.6)';
+                      e.currentTarget.style.background =
+                        'rgba(30, 58, 95, 0.4)';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.3)';
-                      e.currentTarget.style.background = 'rgba(30, 58, 95, 0.2)';
+                      e.currentTarget.style.borderColor =
+                        'rgba(59, 130, 246, 0.3)';
+                      e.currentTarget.style.background =
+                        'rgba(30, 58, 95, 0.2)';
                     }}
                   >
                     <div style={moduleStyles.uploadIcon}>
@@ -564,8 +586,14 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Coluna 2 - Busca + Donut */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {/* Coluna 2 */}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1.25rem',
+              }}
+            >
               <BuscarDocumentosModule />
 
               {/* Donut de Categorias */}
@@ -580,8 +608,14 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Coluna 3 - Atividade + Banner */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {/* Coluna 3 */}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1.25rem',
+              }}
+            >
               {/* Atividade Recente */}
               <div style={moduleStyles.card}>
                 <div style={moduleStyles.cardHeader}>
@@ -606,7 +640,13 @@ export default function Home() {
                     Ver todas <ArrowRight size={12} />
                   </button>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem',
+                  }}
+                >
                   {recentActivity.map((doc) => (
                     <div
                       key={doc.id}
@@ -657,10 +697,13 @@ export default function Home() {
                           Enviado em{' '}
                           {new Date(doc.uploaded_at).toLocaleDateString('pt-BR')}{' '}
                           às{' '}
-                          {new Date(doc.uploaded_at).toLocaleTimeString('pt-BR', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                          {new Date(doc.uploaded_at).toLocaleTimeString(
+                            'pt-BR',
+                            {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            }
+                          )}
                         </p>
                       </div>
                       <span
@@ -792,7 +835,6 @@ export default function Home() {
                   </button>
                 </div>
 
-                {/* Decoração */}
                 <div
                   style={{
                     position: 'absolute',
@@ -861,6 +903,52 @@ export default function Home() {
         darkMode={darkMode}
         setDarkMode={setDarkMode}
       />
+
+      <div style={pageStyles.mainContent}>
+        <header style={pageStyles.header}>
+          <div>
+            <h1 style={pageStyles.headerTitle}>
+              Bem-vindo de volta{userName ? `, ${userName}` : ''}! 👋
+            </h1>
+            <p style={pageStyles.headerSubtitle}>
+              Aqui está um resumo da sua gestão de documentos.
+            </p>
+          </div>
+          <div style={pageStyles.headerActions}>
+            {/* ✅ Barra de pesquisa REMOVIDA */}
+            <button style={pageStyles.headerIconButton}>
+              <Bell size={16} />
+            </button>
+            <button style={pageStyles.headerIconButton}>
+              <SettingsIcon size={16} />
+            </button>
+            <div style={pageStyles.headerAvatar}>{userInitial}</div>
+            <div style={{ textAlign: 'left' }}>
+              <p
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  color: 'white',
+                  margin: 0,
+                }}
+              >
+                {userName || 'Carregando...'}
+              </p>
+              <p
+                style={{
+                  fontSize: '0.65rem',
+                  color: '#94a3b8',
+                  margin: 0,
+                }}
+              >
+                {userEmail || '...'}
+              </p>
+            </div>
+          </div>
+        </header>
+
+        <main style={pageStyles.main}>{renderModule()}</main>
+      </div>
     </div>
   );
 }
