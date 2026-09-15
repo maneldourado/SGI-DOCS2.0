@@ -1,11 +1,10 @@
 // app/BuscarDocumentosModule.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import {
   Search,
   FileText,
-  X,
   Filter,
   ChevronDown,
   ChevronUp,
@@ -14,100 +13,217 @@ import { searchDocuments } from './lib/documents';
 import type { DocumentData } from './lib/supabase';
 import { buscarModuleStyles } from './styles';
 
-interface SearchResult {
-  document: DocumentData;
-  snippet: string;
+// ============================================================
+// Constantes
+// ============================================================
+
+/** Estimativa de caracteres por página (fallback quando não temos páginas reais). */
+const CHARS_PER_PAGE_ESTIMATE = 3000;
+
+/** Quantidade de caracteres de contexto antes/depois de cada match. */
+const SNIPPET_CONTEXT_CHARS = 150;
+
+/** Campos string que serão varridos em cada documento. */
+const SEARCHABLE_FIELDS = [
+  'title',
+  'code',
+  'content',
+  'description',
+  'category',
+] as const;
+
+type SearchableField = (typeof SEARCHABLE_FIELDS)[number];
+
+// ============================================================
+// Normalização (remove acentos + minúsculas)
+// ============================================================
+
+/**
+ * Normaliza um texto para comparação:
+ *  - NFD: decompõe caracteres acentuados
+ *  - remove marcas combinantes (\u0300–\u036f)
+ *  - toLowerCase
+ */
+function normalizeForSearch(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+/**
+ * Constrói a versão normalizada do texto + mapas de início/fim (em code units)
+ * para cada caractere normalizado. Isso permite recuperar a posição EXATA
+ * no texto original, mesmo com acentos/cedilha etc.
+ *
+ * Usamos iteração por code point (`for...of`) para não quebrar surrogates.
+ */
+function normalizeWithMap(text: string): {
+  normalized: string;
+  starts: number[];
+  ends: number[];
+} {
+  let normalized = '';
+  const starts: number[] = [];
+  const ends: number[] = [];
+
+  let codeUnitIndex = 0;
+  for (const ch of text) {
+    const norm = normalizeForSearch(ch);
+    for (let j = 0; j < norm.length; j++) {
+      normalized += norm[j];
+      starts.push(codeUnitIndex);
+      ends.push(codeUnitIndex + ch.length);
+    }
+    codeUnitIndex += ch.length;
+  }
+
+  return { normalized, starts, ends };
+}
+
+// ============================================================
+// Utilidades de posição
+// ============================================================
+
+function getLineAndColumn(
+  text: string,
+  index: number
+): { line: number; column: number } {
+  let line = 1;
+  let lastNewlineIndex = -1;
+  const limit = Math.min(index, text.length);
+  for (let i = 0; i < limit; i++) {
+    if (text[i] === '\n') {
+      line++;
+      lastNewlineIndex = i;
+    }
+  }
+  return { line, column: index - lastNewlineIndex };
+}
+
+function estimatePage(_content: string, charIndex: number): number {
+  if (charIndex <= 0) return 1;
+  return Math.floor(charIndex / CHARS_PER_PAGE_ESTIMATE) + 1;
+}
+
+// ============================================================
+// Tipos
+// ============================================================
+
+interface Occurrence {
+  field: SearchableField;
+  /** Índice inicial do match no texto original (code units) */
+  start: number;
+  /** Índice final EXCLUSIVO no texto original */
+  end: number;
+  /** Linha (1-based) */
+  line: number;
+  /** Coluna (1-based) */
+  column: number;
+  /** Página estimada */
   page: number;
-  matchIndex: number;
+  /** Trecho de contexto extraído do texto original */
+  snippet: string;
+  /** Offset de início do snippet no texto original */
+  snippetStart: number;
+  /** Offset do match DENTRO do snippet */
+  matchStartInSnippet: number;
+  /** Comprimento do match dentro do snippet */
+  matchLengthInSnippet: number;
 }
 
 interface GroupedResult {
   document: DocumentData;
-  results: SearchResult[];
+  occurrences: Occurrence[];
 }
 
-// ✅ Normaliza para busca (remove acentos)
-function normalizeForSearch(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-}
+// ============================================================
+// Busca de ocorrências
+// ============================================================
 
-// ✅ Destaca palavras
-function highlightText(text: string, searchTerm: string) {
-  if (!searchTerm) return text;
+/**
+ * Encontra TODAS as ocorrências (inclusive sobrepostas) de `needleNormalized`
+ * em `haystack`, retornando posições no texto ORIGINAL.
+ *
+ * Importante: avança de 1 em 1 no índice normalizado para capturar
+ * ocorrências sobrepostas (ex.: "aa" em "aaa" → 2 ocorrências).
+ */
+function findAllOccurrencePositions(
+  haystack: string,
+  needleNormalized: string
+): { start: number; end: number }[] {
+  if (!needleNormalized) return [];
 
-  const parts: React.ReactNode[] = [];
-  const lowerText = text.toLowerCase();
-  const lowerSearch = searchTerm.toLowerCase();
+  const { normalized, starts, ends } = normalizeWithMap(haystack);
 
-  let lastIndex = 0;
-  let index = lowerText.indexOf(lowerSearch);
+  const results: { start: number; end: number }[] = [];
+  let searchFrom = 0;
 
-  while (index !== -1) {
-    parts.push(text.substring(lastIndex, index));
-    parts.push(
-      <mark
-        key={index}
-        style={{
-          backgroundColor: '#fef08a',
-          padding: '0',
-          borderRadius: '2px',
-          color: '#0f172a',
-          fontWeight: 600,
-        }}
-      >
-        {text.substring(index, index + searchTerm.length)}
-      </mark>
-    );
-    lastIndex = index + searchTerm.length;
-    index = lowerText.indexOf(lowerSearch, lastIndex);
-  }
+  while (searchFrom <= normalized.length - needleNormalized.length) {
+    const found = normalized.indexOf(needleNormalized, searchFrom);
+    if (found === -1) break;
 
-  parts.push(text.substring(lastIndex));
-  return parts;
-}
-
-// ✅ Calcula página aproximada pelo índice do caractere
-function estimatePage(content: string, charIndex: number): number {
-  const charsPerPage = 3000;
-  return Math.floor(charIndex / charsPerPage) + 1;
-}
-
-// ✅ Encontra TODAS as ocorrências de um termo no conteúdo
-function findAllOccurrences(
-  content: string,
-  searchTerm: string
-): { index: number; snippet: string; page: number }[] {
-  const occurrences: { index: number; snippet: string; page: number }[] = [];
-  const lowerContent = content.toLowerCase();
-  const lowerSearch = searchTerm.toLowerCase();
-
-  let searchIndex = 0;
-  let matchIndex = 0;
-
-  while (searchIndex !== -1) {
-    const index = lowerContent.indexOf(lowerSearch, searchIndex);
-    if (index === -1) break;
-
-    // Pega o trecho com contexto (150 antes e 150 depois)
-    const start = Math.max(0, index - 150);
-    const end = Math.min(content.length, index + searchTerm.length + 150);
-    const snippet = content.substring(start, end);
-
-    occurrences.push({
-      index,
-      snippet,
-      page: estimatePage(content, index),
+    const lastNormIndex = found + needleNormalized.length - 1;
+    results.push({
+      start: starts[found],
+      end: ends[lastNormIndex],
     });
 
-    matchIndex++;
-    searchIndex = index + searchTerm.length;
+    // +1 para permitir matches sobrepostos
+    searchFrom = found + 1;
   }
 
-  return occurrences;
+  return results;
 }
+
+function buildOccurrences(
+  field: SearchableField,
+  text: string,
+  needleNormalized: string
+): Occurrence[] {
+  const positions = findAllOccurrencePositions(text, needleNormalized);
+
+  return positions.map(({ start, end }) => {
+    const snippetStart = Math.max(0, start - SNIPPET_CONTEXT_CHARS);
+    const snippetEnd = Math.min(text.length, end + SNIPPET_CONTEXT_CHARS);
+    const snippet = text.substring(snippetStart, snippetEnd);
+    const { line, column } = getLineAndColumn(text, start);
+
+    return {
+      field,
+      start,
+      end,
+      line,
+      column,
+      page: estimatePage(text, start),
+      snippet,
+      snippetStart,
+      matchStartInSnippet: start - snippetStart,
+      matchLengthInSnippet: end - start,
+    };
+  });
+}
+
+/** Recupera todos os campos string pesquisáveis do documento. */
+function getSearchableFields(
+  doc: DocumentData
+): { field: SearchableField; value: string }[] {
+  const result: { field: SearchableField; value: string }[] = [];
+  const docAny = doc as unknown as Record<string, unknown>;
+
+  for (const field of SEARCHABLE_FIELDS) {
+    const value = docAny[field];
+    if (typeof value === 'string' && value.length > 0) {
+      result.push({ field, value });
+    }
+  }
+
+  return result;
+}
+
+// ============================================================
+// Componente
+// ============================================================
 
 export default function BuscarDocumentosModule() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -118,93 +234,118 @@ export default function BuscarDocumentosModule() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
-  const [totalMatches, setTotalMatches] = useState(0);
+
+  // Guarda o ID da requisição atual para evitar race conditions
+  const requestIdRef = useRef(0);
+
+  const totalMatches = useMemo(
+    () => groupedResults.reduce((acc, g) => acc + g.occurrences.length, 0),
+    [groupedResults]
+  );
 
   const handleSearch = async () => {
-    if (!searchTerm.trim()) {
+    const trimmed = searchTerm.trim();
+
+    if (!trimmed) {
       setError('Digite uma palavra ou código para buscar');
       setGroupedResults([]);
       setHasSearched(false);
       return;
     }
 
+    const requestId = ++requestIdRef.current;
+
     setLoading(true);
     setError(null);
     setHasSearched(true);
 
     try {
-      // ✅ Busca no Supabase (retorna documentos que contêm o termo)
       const docs = await searchDocuments({
-        searchTerm: searchTerm.trim(),
+        searchTerm: trimmed,
         category,
         date: dateFilter || undefined,
       });
 
-      if (docs.length === 0) {
+      // Descarta resposta obsoleta
+      if (requestId !== requestIdRef.current) return;
+
+      const needleNormalized = normalizeForSearch(trimmed);
+      if (!needleNormalized) {
         setGroupedResults([]);
-        setTotalMatches(0);
-        setError('Nenhum documento contém esse termo.');
+        setError('Termo de busca inválido.');
         return;
       }
 
-      // ✅ Para cada documento, encontra TODAS as ocorrências
       const grouped: GroupedResult[] = [];
-      let total = 0;
 
       for (const doc of docs) {
-        const content = doc.content || '';
-        const occurrences = findAllOccurrences(content, searchTerm.trim());
+        const fields = getSearchableFields(doc);
+        const occurrences: Occurrence[] = [];
+
+        for (const { field, value } of fields) {
+          occurrences.push(...buildOccurrences(field, value, needleNormalized));
+        }
 
         if (occurrences.length > 0) {
-          const results: SearchResult[] = occurrences.map((occ, idx) => ({
-            document: doc,
-            snippet: occ.snippet,
-            page: occ.page,
-            matchIndex: idx + 1,
-          }));
-
-          grouped.push({
-            document: doc,
-            results,
-          });
-
-          total += results.length;
+          grouped.push({ document: doc, occurrences });
         }
       }
 
       setGroupedResults(grouped);
-      setTotalMatches(total);
-      setExpandedDocs(new Set()); // Fecha tudo por padrão
+      setExpandedDocs(new Set());
 
       if (grouped.length === 0) {
-        setError('Nenhum documento contém esse termo.');
+        if (docs.length === 0) {
+          setError('Nenhum documento corresponde aos filtros selecionados.');
+        } else {
+          setError(
+            'Documentos foram encontrados, mas o termo exato não pôde ser localizado nos campos pesquisáveis (título, código, conteúdo, descrição, categoria).'
+          );
+        }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      if (requestId !== requestIdRef.current) return;
       console.error('Erro na busca:', err);
-      setError(`Erro na busca: ${err.message}`);
+      const message = err instanceof Error ? err.message : String(err);
+      setError(`Erro na busca: ${message}`);
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSearch();
-    }
+    if (e.key === 'Enter') handleSearch();
+  };
+
+  // Limpa erro assim que o usuário altera qualquer filtro
+  const handleTermChange = (value: string) => {
+    setSearchTerm(value);
+    if (error) setError(null);
+  };
+
+  const handleCategoryChange = (value: string) => {
+    setCategory(value);
+    if (error) setError(null);
+  };
+
+  const handleDateChange = (value: string) => {
+    setDateFilter(value);
+    if (error) setError(null);
   };
 
   const toggleExpand = (docId: string) => {
-    const newExpanded = new Set(expandedDocs);
-    if (newExpanded.has(docId)) {
-      newExpanded.delete(docId);
-    } else {
-      newExpanded.add(docId);
-    }
-    setExpandedDocs(newExpanded);
+    setExpandedDocs((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) next.delete(docId);
+      else next.add(docId);
+      return next;
+    });
   };
 
   const expandAll = () => {
-    setExpandedDocs(new Set(groupedResults.map((g) => g.document.id)));
+    setExpandedDocs(new Set(groupedResults.map((g) => String(g.document.id))));
   };
 
   const collapseAll = () => {
@@ -235,7 +376,7 @@ export default function BuscarDocumentosModule() {
           <input
             type="text"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => handleTermChange(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Digite qualquer palavra, código ou título..."
             style={buscarModuleStyles.searchInput}
@@ -245,11 +386,13 @@ export default function BuscarDocumentosModule() {
         <select
           data-theme="dark"
           value={category}
-          onChange={(e) => setCategory(e.target.value)}
+          onChange={(e) => handleCategoryChange(e.target.value)}
           style={buscarModuleStyles.select}
         >
           <option value="Todas">Todas as categorias</option>
-          <option value="Segurança da Informação">Segurança da Informação</option>
+          <option value="Segurança da Informação">
+            Segurança da Informação
+          </option>
           <option value="Procedimentos">Procedimentos</option>
           <option value="Manuais">Manuais</option>
           <option value="Políticas">Políticas</option>
@@ -261,7 +404,7 @@ export default function BuscarDocumentosModule() {
           data-theme="dark"
           type="date"
           value={dateFilter}
-          onChange={(e) => setDateFilter(e.target.value)}
+          onChange={(e) => handleDateChange(e.target.value)}
           style={buscarModuleStyles.dateInput}
         />
 
@@ -289,8 +432,10 @@ export default function BuscarDocumentosModule() {
             }}
           >
             <h3 style={{ ...buscarModuleStyles.resultsTitle, margin: 0 }}>
-              Resultados ({groupedResults.length} documentos • {totalMatches}{' '}
-              ocorrências)
+              Resultados ({groupedResults.length}{' '}
+              {groupedResults.length === 1 ? 'documento' : 'documentos'} •{' '}
+              {totalMatches}{' '}
+              {totalMatches === 1 ? 'ocorrência' : 'ocorrências'})
             </h3>
 
             <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -323,17 +468,23 @@ export default function BuscarDocumentosModule() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div
+            style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+          >
             {groupedResults.map((group) => {
-              const isExpanded = expandedDocs.has(group.document.id);
-              const totalResults = group.results.length;
+              const docId = String(group.document.id);
+              const isExpanded = expandedDocs.has(docId);
+              const totalResults = group.occurrences.length;
               const pages = Array.from(
-                new Set(group.results.map((r) => r.page))
+                new Set(group.occurrences.map((o) => o.page))
               ).sort((a, b) => a - b);
+              const fields = Array.from(
+                new Set(group.occurrences.map((o) => o.field))
+              );
 
               return (
                 <div
-                  key={group.document.id}
+                  key={docId}
                   style={{
                     border: '1px solid rgba(59, 130, 246, 0.15)',
                     borderRadius: '0.75rem',
@@ -343,7 +494,7 @@ export default function BuscarDocumentosModule() {
                 >
                   {/* Cabeçalho clicável */}
                   <button
-                    onClick={() => toggleExpand(group.document.id)}
+                    onClick={() => toggleExpand(docId)}
                     style={{
                       width: '100%',
                       display: 'flex',
@@ -387,6 +538,7 @@ export default function BuscarDocumentosModule() {
                             display: 'flex',
                             alignItems: 'center',
                             gap: '0.5rem',
+                            flexWrap: 'wrap',
                           }}
                         >
                           <span
@@ -399,10 +551,7 @@ export default function BuscarDocumentosModule() {
                             {group.document.code}
                           </span>
                           <span
-                            style={{
-                              fontSize: '0.7rem',
-                              color: '#94a3b8',
-                            }}
+                            style={{ fontSize: '0.7rem', color: '#94a3b8' }}
                           >
                             {group.document.title}
                           </span>
@@ -417,7 +566,8 @@ export default function BuscarDocumentosModule() {
                           Enviado em{' '}
                           {new Date(
                             group.document.uploaded_at
-                          ).toLocaleDateString('pt-BR')}
+                          ).toLocaleDateString('pt-BR')}{' '}
+                          • Campos: {fields.join(', ')}
                         </p>
                       </div>
                     </div>
@@ -481,14 +631,15 @@ export default function BuscarDocumentosModule() {
                           gap: '0.5rem',
                         }}
                       >
-                        {group.results.map((result, idx) => (
+                        {group.occurrences.map((occ, idx) => (
                           <div
-                            key={idx}
+                            key={`${occ.field}-${occ.start}-${idx}`}
                             style={{
                               background: 'rgba(15, 30, 58, 0.6)',
                               borderRadius: '0.5rem',
                               padding: '0.75rem',
-                              border: '1px solid rgba(59, 130, 246, 0.1)',
+                              border:
+                                '1px solid rgba(59, 130, 246, 0.1)',
                             }}
                           >
                             <div
@@ -497,6 +648,8 @@ export default function BuscarDocumentosModule() {
                                 alignItems: 'center',
                                 justifyContent: 'space-between',
                                 marginBottom: '0.5rem',
+                                flexWrap: 'wrap',
+                                gap: '0.25rem',
                               }}
                             >
                               <span
@@ -506,8 +659,20 @@ export default function BuscarDocumentosModule() {
                                   fontWeight: 600,
                                 }}
                               >
-                                📄 Ocorrência #{result.matchIndex} • Página ~
-                                {result.page}
+                                📄 Ocorrência #{idx + 1}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '0.6rem',
+                                  color: '#94a3b8',
+                                }}
+                              >
+                                campo:{' '}
+                                <strong style={{ color: '#cbd5e1' }}>
+                                  {occ.field}
+                                </strong>{' '}
+                                • Página ~{occ.page} • Linha {occ.line}, Coluna{' '}
+                                {occ.column} • offset {occ.start}–{occ.end}
                               </span>
                             </div>
                             <div
@@ -516,9 +681,14 @@ export default function BuscarDocumentosModule() {
                                 color: '#cbd5e1',
                                 lineHeight: 1.7,
                                 whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
                               }}
                             >
-                              {highlightText(result.snippet, searchTerm)}
+                              {renderSnippet(
+                                occ.snippet,
+                                occ.matchStartInSnippet,
+                                occ.matchLengthInSnippet
+                              )}
                             </div>
                           </div>
                         ))}
@@ -546,5 +716,44 @@ export default function BuscarDocumentosModule() {
         </div>
       )}
     </div>
+  );
+}
+
+// ============================================================
+// Renderização de snippet com highlight POSICIONAL
+// (não depende de nova busca textual — usa os offsets já calculados)
+// ============================================================
+
+function renderSnippet(
+  snippet: string,
+  matchStart: number,
+  matchLength: number
+) {
+  const safeStart = Math.max(0, Math.min(matchStart, snippet.length));
+  const safeEnd = Math.max(
+    safeStart,
+    Math.min(safeStart + matchLength, snippet.length)
+  );
+
+  const before = snippet.substring(0, safeStart);
+  const match = snippet.substring(safeStart, safeEnd);
+  const after = snippet.substring(safeEnd);
+
+  return (
+    <>
+      {before}
+      <mark
+        style={{
+          backgroundColor: '#fef08a',
+          padding: '0',
+          borderRadius: '2px',
+          color: '#0f172a',
+          fontWeight: 600,
+        }}
+      >
+        {match}
+      </mark>
+      {after}
+    </>
   );
 }
