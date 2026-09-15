@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import Sidebar from '../Sidebar';
 import { uploadDocument } from '../lib/documents';
-import { loadSettings } from '../lib/settings';
+import { loadSettings, saveSettings } from '../lib/settings';
 import { pageStyles, moduleStyles } from '../styles';
 
 // ============================================================
@@ -68,7 +68,6 @@ const MESSAGE_STYLES: Record<
 // ============================================================
 
 function normalizeSpaces(text: string): string {
-  // Preserva quebras de linha: colapsa espaços/tabs, mas mantém \n
   return text
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/[ \t]+\n/g, '\n')
@@ -79,7 +78,6 @@ function normalizeSpaces(text: string): string {
 function removeFooterKeywords(text: string): string {
   let result = text;
 
-  // Bloco 1: cabeçalho/rodapé em linha única (título, data, elaboração, etc.)
   result = result.replace(
     /T[ÍI]TULO:\s*[^\n]*?(?=DATA\s+REVIS[ÃA]O:|ELABORA[ÇC][ÃA]O:|APROVA[ÇC][ÃA]O:|P[ÁA]GINA:|P[ÁA]G\.|$)/gi,
     ''
@@ -97,23 +95,19 @@ function removeFooterKeywords(text: string): string {
     ''
   );
 
-  // Paginação em variações comuns
   result = result.replace(/P[ÁA]GINA:\s*\d+\s*(?:de|\/)\s*\d+/gi, '');
   result = result.replace(/P[ÁA]G\.?\s*\d+\s*(?:de|\/)\s*\d+/gi, '');
   result = result.replace(/P[ÁA]G\.?\s*\d+/gi, '');
   result = result.replace(/P[ÁA]GINA\s*\d+/gi, '');
-  result = result.replace(/\b\d+\s*\/\s*\d+\b/g, ''); // "5 / 20"
+  result = result.replace(/\b\d+\s*\/\s*\d+\b/g, '');
 
-  // Revisão / código de documento no rodapé
   result = result.replace(/REVIS[ÃA]O:\s*\d+/gi, '');
   result = result.replace(/REV\.?\s*\d+/gi, '');
   result = result.replace(/C[ÓO]DIGO:\s*[^\s\n]+/gi, '');
 
-  // Marcações de cópia
   result = result.replace(/C[ÓO]PIA\s+ELETR[ÔO]NICA/gi, '');
   result = result.replace(/C[ÓO]PIA\s+N[ÃA]O\s+CONTROLADA/gi, '');
 
-  // Limpa espaços residuais deixados pelas remoções
   result = result.replace(/[ \t]{2,}/g, ' ');
   result = result.replace(/[ \t]+\n/g, '\n');
   result = result.replace(/\n{3,}/g, '\n\n');
@@ -235,7 +229,6 @@ function preprocessImage(canvas: HTMLCanvasElement): void {
 function shouldUseOcr(pageText: string): boolean {
   const trimmed = pageText.trim();
   if (trimmed.length < 10) return true;
-  // Se houver muitos caracteres não-alfanuméricos, provavelmente é lixo
   const alnum = (trimmed.match(/[a-zA-Z0-9À-ÿ]/g) || []).length;
   return alnum / trimmed.length < 0.3;
 }
@@ -269,7 +262,6 @@ export default function UploadPage() {
 
   const [isDragging, setIsDragging] = useState(false);
 
-  // Controle de cancelamento e worker compartilhado do Tesseract
   const cancelRef = useRef(false);
   const tesseractWorkerRef = useRef<any>(null);
   const tesseractLoadingRef = useRef<Promise<any> | null>(null);
@@ -316,32 +308,27 @@ export default function UploadPage() {
     };
   }, []);
 
-  const handleDarkModeChange = useCallback((value: boolean) => {
+  // ----------------------------------------------------------
+  // Mudança de tema (persiste carregando o Settings completo)
+  // ----------------------------------------------------------
+  const handleDarkModeChange = useCallback(async (value: boolean) => {
     setDarkMode(value);
-    if (typeof window === 'undefined') return;
+
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(
+          new CustomEvent(DARK_MODE_EVENT, { detail: { darkMode: value } })
+        );
+      } catch {
+        /* ignora */
+      }
+    }
+
     try {
-      window.dispatchEvent(
-        new CustomEvent(DARK_MODE_EVENT, { detail: { darkMode: value } })
-      );
-      // Persistência best-effort (não quebra se saveSettings não existir)
-      import('../lib/settings')
-        .then((mod) => {
-          const save = (
-            mod as {
-              saveSettings?: (s: { darkMode: boolean }) => Promise<void>;
-            }
-          ).saveSettings;
-          if (typeof save === 'function') {
-            save({ darkMode: value }).catch(() => {
-              /* ignora */
-            });
-          }
-        })
-        .catch(() => {
-          /* ignora */
-        });
+      const current = await loadSettings();
+      await saveSettings({ ...current, darkMode: value });
     } catch {
-      /* ignora */
+      /* ignora erros de persistência */
     }
   }, []);
 
@@ -433,7 +420,6 @@ export default function UploadPage() {
     if (input.files) {
       addFiles(Array.from(input.files));
     }
-    // Permite reselecionar o mesmo arquivo
     input.value = '';
   };
 
@@ -518,7 +504,6 @@ export default function UploadPage() {
           continue;
         }
 
-        // Renderiza em canvas para OCR
         const scale = 2;
         const viewport = page.getViewport({ scale });
         const canvas = document.createElement('canvas');
@@ -527,7 +512,6 @@ export default function UploadPage() {
         const ctx = canvas.getContext('2d');
 
         if (!ctx) {
-          // Sem contexto 2D: usa o que tiver de texto nativo
           parts.push(pageText);
           continue;
         }
@@ -537,7 +521,6 @@ export default function UploadPage() {
           preprocessImage(canvas);
           const imageDataUrl = canvas.toDataURL('image/jpeg', 0.85);
 
-          // Libera memória do canvas antes do OCR
           canvas.width = 0;
           canvas.height = 0;
 
@@ -559,7 +542,6 @@ export default function UploadPage() {
             ]);
             ocrText = result?.data?.text ?? '';
           } catch (err: any) {
-            // Se o worker travou, descarta para recriar na próxima
             if (String(err?.message || '').includes('Tempo esgotado')) {
               if (tesseractWorkerRef.current) {
                 try {
@@ -576,10 +558,8 @@ export default function UploadPage() {
 
           parts.push(ocrText.length > 0 ? ocrText : pageText);
         } catch {
-          // Falha no render/OCR: cai para o texto nativo da página
           parts.push(pageText);
         } finally {
-          // Garante liberação mesmo em exceção
           if (canvas.width !== 0 || canvas.height !== 0) {
             canvas.width = 0;
             canvas.height = 0;
@@ -593,7 +573,7 @@ export default function UploadPage() {
         /* ignora */
       }
 
-      void seq; // reservado para uso futuro (não altera assinatura)
+      void seq;
       return parts.join('\n');
     },
     [getTesseractWorker]
@@ -632,15 +612,12 @@ export default function UploadPage() {
       try {
         const content = await extractPDFText(file, i);
 
-        // Ordem correta: removeFooterKeywords ANTES de normalizeSpaces,
-        // pois os regex de footer dependem de \n.
         let finalContent = removeFooterKeywords(content);
 
         if (removeExtraSpaces) {
           finalContent = normalizeSpaces(finalContent);
         }
 
-        // Se o processamento destruiu o texto, volta ao original
         if (finalContent.length < 10 && content.length >= 10) {
           finalContent = removeExtraSpaces ? normalizeSpaces(content) : content;
         }
