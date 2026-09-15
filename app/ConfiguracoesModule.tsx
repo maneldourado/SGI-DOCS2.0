@@ -20,7 +20,7 @@ import {
   loadSettings,
   saveSettings,
   resetSettings,
-  applyDarkMode,
+  applyTheme,
   DEFAULT_SETTINGS,
   type Settings,
 } from './lib/settings';
@@ -31,20 +31,17 @@ export default function ConfiguracoesModule() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [error, setError] = useState('');
 
-  // ✅ Carrega as configurações ao abrir
   useEffect(() => {
     loadSettings()
       .then((loaded) => {
         setSettings(loaded);
-        applyDarkMode(loaded.darkMode);
+        applyTheme(loaded.darkMode);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
 
-  // ✅ Atualiza uma configuração (aplica em tempo real)
   const updateSetting = <K extends keyof Settings>(
     key: K,
     value: Settings[K]
@@ -52,33 +49,27 @@ export default function ConfiguracoesModule() {
     const newSettings = { ...settings, [key]: value };
     setSettings(newSettings);
 
-    // ✅ Aplica o tema escuro em tempo real
+    // ✅ Aplica o tema em tempo real
     if (key === 'darkMode') {
-      applyDarkMode(value as boolean);
+      applyTheme(value as boolean);
     }
 
-    // ✅ Salva automaticamente no localStorage (sem esperar o botão)
     localStorage.setItem('sgi_docs_settings', JSON.stringify(newSettings));
   };
 
-  // ✅ Salva tudo (localStorage + Supabase)
   const handleSave = async () => {
     setSaving(true);
-    setError('');
-
     try {
       await saveSettings(settings);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch (err: any) {
-      setError('Erro ao salvar configurações');
+    } catch (err) {
       console.error(err);
     } finally {
       setSaving(false);
     }
   };
 
-  // ✅ Resetar configurações
   const handleReset = async () => {
     const defaults = await resetSettings();
     setSettings(defaults);
@@ -87,25 +78,20 @@ export default function ConfiguracoesModule() {
     setTimeout(() => setSaved(false), 3000);
   };
 
-  // ✅ Loading
   if (loading) {
     return (
-      <div
-        style={{
-          textAlign: 'center',
-          padding: '4rem 0',
-          color: '#64748b',
-        }}
-      >
+      <div style={{ textAlign: 'center', padding: '4rem 0' }}>
         <Loader2
           size={32}
           style={{
-            color: '#3b82f6',
+            color: 'var(--accent)',
             animation: 'spin 1s linear infinite',
             margin: '0 auto 1rem',
           }}
         />
-        <p style={{ fontSize: '0.875rem' }}>Carregando configurações...</p>
+        <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+          Carregando configurações...
+        </p>
       </div>
     );
   }
@@ -116,9 +102,8 @@ export default function ConfiguracoesModule() {
         style={{
           fontSize: '1.5rem',
           fontWeight: 700,
-          color: 'white',
+          color: 'var(--text-primary)',
           marginBottom: '0.5rem',
-          letterSpacing: '-0.02em',
         }}
       >
         Configurações
@@ -126,57 +111,63 @@ export default function ConfiguracoesModule() {
       <p
         style={{
           fontSize: '0.875rem',
-          color: '#94a3b8',
+          color: 'var(--text-muted)',
           marginBottom: '2rem',
         }}
       >
         Gerencie as preferências do sistema
       </p>
 
-      {/* ✅ Aparência */}
+      {/* Aparência */}
       <div style={cardStyle}>
         <h2 style={titleStyle}>
-          <SettingsIcon size={18} color="#3b82f6" />
+          <SettingsIcon size={18} color="var(--accent)" />
           Aparência
         </h2>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <label style={labelStyle}>
-            <span style={labelTextStyle}>
-              {settings.darkMode ? (
-                <Moon
-                  size={14}
-                  style={{ display: 'inline', marginRight: '8px', color: '#60a5fa' }}
-                />
-              ) : (
-                <Sun
-                  size={14}
-                  style={{ display: 'inline', marginRight: '8px', color: '#f59e0b' }}
-                />
-              )}
-              Tema escuro
-            </span>
-            <ToggleSwitch
-              checked={settings.darkMode}
-              onChange={(v) => updateSetting('darkMode', v)}
-            />
-          </label>
-          <p
-            style={{
-              fontSize: '0.7rem',
-              color: '#64748b',
-              margin: 0,
-              lineHeight: 1.5,
-            }}
-          >
-            💡 O tema é aplicado imediatamente em todo o sistema.
-          </p>
-        </div>
+        <label style={labelStyle}>
+          <span style={labelTextStyle}>
+            {settings.darkMode ? (
+              <Moon
+                size={14}
+                style={{
+                  display: 'inline',
+                  marginRight: '8px',
+                  color: 'var(--accent-light)',
+                }}
+              />
+            ) : (
+              <Sun
+                size={14}
+                style={{
+                  display: 'inline',
+                  marginRight: '8px',
+                  color: '#f59e0b',
+                }}
+              />
+            )}
+            {settings.darkMode ? 'Tema escuro' : 'Tema claro'}
+          </span>
+          <ToggleSwitch
+            checked={settings.darkMode}
+            onChange={(v) => updateSetting('darkMode', v)}
+          />
+        </label>
+        <p
+          style={{
+            fontSize: '0.7rem',
+            color: 'var(--text-dim)',
+            margin: '0.75rem 0 0',
+            lineHeight: 1.5,
+          }}
+        >
+          💡 O tema é aplicado imediatamente em todo o sistema.
+        </p>
       </div>
 
-      {/* ✅ Notificações */}
+      {/* Notificações */}
       <div style={cardStyle}>
         <h2 style={titleStyle}>
-          <Bell size={18} color="#3b82f6" />
+          <Bell size={18} color="var(--accent)" />
           Notificações
         </h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -190,9 +181,7 @@ export default function ConfiguracoesModule() {
             />
           </label>
           <label style={labelStyle}>
-            <span style={labelTextStyle}>
-              Notificar quando OCR terminar
-            </span>
+            <span style={labelTextStyle}>Notificar quando OCR terminar</span>
             <ToggleSwitch
               checked={settings.autoOCR}
               onChange={(v) => updateSetting('autoOCR', v)}
@@ -201,10 +190,10 @@ export default function ConfiguracoesModule() {
         </div>
       </div>
 
-      {/* ✅ Armazenamento */}
+      {/* Armazenamento */}
       <div style={cardStyle}>
         <h2 style={titleStyle}>
-          <Database size={18} color="#3b82f6" />
+          <Database size={18} color="var(--accent)" />
           Armazenamento
         </h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -213,13 +202,12 @@ export default function ConfiguracoesModule() {
               style={{
                 fontSize: '0.75rem',
                 fontWeight: 600,
-                color: '#94a3b8',
+                color: 'var(--text-muted)',
               }}
             >
               Limite máximo de upload (MB)
             </label>
             <input
-              data-theme="dark"
               type="number"
               value={settings.storageLimit}
               onChange={(e) =>
@@ -231,25 +219,14 @@ export default function ConfiguracoesModule() {
                 width: '100%',
                 padding: '0.75rem 1rem',
                 marginTop: '0.5rem',
-                border: '1px solid rgba(59, 130, 246, 0.2)',
+                border: '1px solid var(--border-input)',
                 borderRadius: '0.75rem',
                 fontSize: '0.8rem',
-                background: 'rgba(30, 58, 95, 0.2)',
-                color: 'white',
+                background: 'var(--bg-input)',
+                color: 'var(--text-primary)',
                 outline: 'none',
               }}
             />
-            <p
-              style={{
-                fontSize: '0.7rem',
-                color: '#64748b',
-                margin: '0.5rem 0 0',
-                lineHeight: 1.5,
-              }}
-            >
-              💡 Arquivos maiores que {settings.storageLimit}MB serão bloqueados
-              no upload.
-            </p>
           </div>
           <label style={labelStyle}>
             <span style={labelTextStyle}>Salvar histórico de versões</span>
@@ -261,14 +238,13 @@ export default function ConfiguracoesModule() {
         </div>
       </div>
 
-      {/* ✅ Idioma */}
+      {/* Idioma */}
       <div style={cardStyle}>
         <h2 style={titleStyle}>
-          <User size={18} color="#3b82f6" />
+          <User size={18} color="var(--accent)" />
           Idioma
         </h2>
         <select
-          data-theme="dark"
           value={settings.language}
           onChange={(e) =>
             updateSetting('language', e.target.value as 'pt-BR' | 'en-US')
@@ -276,11 +252,11 @@ export default function ConfiguracoesModule() {
           style={{
             width: '100%',
             padding: '0.75rem 1rem',
-            border: '1px solid rgba(59, 130, 246, 0.2)',
+            border: '1px solid var(--border-input)',
             borderRadius: '0.75rem',
             fontSize: '0.8rem',
-            background: '#0f1e3a',
-            color: 'white',
+            background: 'var(--bg-input)',
+            color: 'var(--text-primary)',
             outline: 'none',
           }}
         >
@@ -289,10 +265,10 @@ export default function ConfiguracoesModule() {
         </select>
       </div>
 
-      {/* ✅ Segurança */}
+      {/* Segurança */}
       <div style={cardStyle}>
         <h2 style={titleStyle}>
-          <Shield size={18} color="#3b82f6" />
+          <Shield size={18} color="var(--accent)" />
           Segurança
         </h2>
         <div
@@ -300,7 +276,7 @@ export default function ConfiguracoesModule() {
             display: 'flex',
             alignItems: 'center',
             gap: '0.75rem',
-            color: '#94a3b8',
+            color: 'var(--text-muted)',
             fontSize: '0.8rem',
           }}
         >
@@ -309,7 +285,7 @@ export default function ConfiguracoesModule() {
         </div>
       </div>
 
-      {/* ✅ Zona de perigo */}
+      {/* Zona de perigo */}
       <div
         style={{
           background: 'rgba(239, 68, 68, 0.08)',
@@ -333,16 +309,6 @@ export default function ConfiguracoesModule() {
           <AlertTriangle size={18} />
           Zona de Perigo
         </h2>
-        <p
-          style={{
-            fontSize: '0.8rem',
-            color: '#fca5a5',
-            marginBottom: '1rem',
-            lineHeight: 1.5,
-          }}
-        >
-          Restaurar as configurações padrão. Isso não afeta seus documentos.
-        </p>
         {!showResetConfirm ? (
           <button
             onClick={() => setShowResetConfirm(true)}
@@ -383,12 +349,12 @@ export default function ConfiguracoesModule() {
             <button
               onClick={() => setShowResetConfirm(false)}
               style={{
-                background: 'rgba(15, 30, 58, 0.6)',
-                color: '#94a3b8',
+                background: 'var(--bg-input)',
+                color: 'var(--text-muted)',
                 padding: '0.625rem 1.25rem',
                 borderRadius: '0.75rem',
                 fontWeight: 600,
-                border: '1px solid rgba(59, 130, 246, 0.2)',
+                border: '1px solid var(--border-input)',
                 cursor: 'pointer',
                 fontSize: '0.8rem',
               }}
@@ -399,24 +365,7 @@ export default function ConfiguracoesModule() {
         )}
       </div>
 
-      {/* ✅ Erro */}
-      {error && (
-        <div
-          style={{
-            padding: '0.75rem 1rem',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            color: '#fca5a5',
-            borderRadius: '0.5rem',
-            fontSize: '0.8rem',
-            marginBottom: '1rem',
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {/* ✅ Botão salvar */}
+      {/* Botão salvar */}
       <button
         onClick={handleSave}
         disabled={saving}
@@ -435,7 +384,6 @@ export default function ConfiguracoesModule() {
           cursor: saving ? 'wait' : 'pointer',
           fontSize: '0.875rem',
           boxShadow: '0 4px 16px rgba(37, 99, 235, 0.4)',
-          transition: 'all 0.3s',
           opacity: saving ? 0.7 : 1,
         }}
       >
@@ -449,18 +397,17 @@ export default function ConfiguracoesModule() {
         {saving
           ? 'Salvando...'
           : saved
-          ? 'Salvo com sucesso!'
+          ? 'Salvo!'
           : 'Salvar Configurações'}
       </button>
     </div>
   );
 }
 
-// ✅ Estilos reutilizáveis
 const cardStyle: React.CSSProperties = {
-  background: 'rgba(15, 30, 58, 0.5)',
+  background: 'var(--bg-card)',
   borderRadius: '1rem',
-  border: '1px solid rgba(59, 130, 246, 0.15)',
+  border: '1px solid var(--border-primary)',
   padding: '1.5rem',
   marginBottom: '1.25rem',
 };
@@ -468,7 +415,7 @@ const cardStyle: React.CSSProperties = {
 const titleStyle: React.CSSProperties = {
   fontSize: '1rem',
   fontWeight: 700,
-  color: 'white',
+  color: 'var(--text-primary)',
   marginBottom: '1rem',
   display: 'flex',
   alignItems: 'center',
@@ -484,11 +431,10 @@ const labelStyle: React.CSSProperties = {
 
 const labelTextStyle: React.CSSProperties = {
   fontSize: '0.8rem',
-  color: '#cbd5e1',
+  color: 'var(--text-secondary)',
   fontWeight: 500,
 };
 
-// ✅ Toggle Switch Component
 function ToggleSwitch({
   checked,
   onChange,
@@ -504,7 +450,7 @@ function ToggleSwitch({
         width: '2.5rem',
         height: '1.4rem',
         borderRadius: '9999px',
-        background: checked ? '#3b82f6' : '#334155',
+        background: checked ? 'var(--accent)' : 'var(--border-primary)',
         border: 'none',
         cursor: 'pointer',
         position: 'relative',
