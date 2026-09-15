@@ -1,7 +1,7 @@
 // app/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   FileText,
@@ -22,6 +22,7 @@ import {
   TrendingUp,
   ScanText,
   Lock,
+  X,
 } from 'lucide-react';
 import Link from 'next/link';
 import Sidebar from './Sidebar';
@@ -260,6 +261,254 @@ function CategoryDonut({
   );
 }
 
+// ✅ NotificationsDropdown
+function NotificationsDropdown({
+  documents,
+  onClose,
+  onViewAll,
+}: {
+  documents: DocumentData[];
+  onClose: () => void;
+  onViewAll: () => void;
+}) {
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Fecha ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+
+  // Pega os 8 últimos documentos
+  const recentDocs = documents.slice(0, 8);
+
+  return (
+    <div
+      ref={dropdownRef}
+      style={{
+        position: 'absolute',
+        top: 'calc(100% + 0.5rem)',
+        right: 0,
+        width: '360px',
+        background: 'var(--bg-secondary)',
+        border: '1px solid var(--border-primary)',
+        borderRadius: '1rem',
+        boxShadow: '0 12px 32px rgba(0, 0, 0, 0.4)',
+        zIndex: 100,
+        overflow: 'hidden',
+        animation: 'fadeIn 0.2s ease',
+      }}
+    >
+      {/* Cabeçalho */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '1rem 1.25rem',
+          borderBottom: '1px solid var(--border-primary)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Bell size={16} color="var(--accent)" />
+          <h3
+            style={{
+              fontSize: '0.9rem',
+              fontWeight: 700,
+              color: 'var(--text-primary)',
+              margin: 0,
+            }}
+          >
+            Notificações
+          </h3>
+          {recentDocs.length > 0 && (
+            <span
+              style={{
+                fontSize: '0.65rem',
+                background: 'var(--accent)',
+                color: 'white',
+                padding: '0.125rem 0.5rem',
+                borderRadius: '9999px',
+                fontWeight: 600,
+              }}
+            >
+              {recentDocs.length}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={onClose}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--text-muted)',
+            padding: '0.25rem',
+            display: 'flex',
+          }}
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      {/* Lista */}
+      <div
+        style={{
+          maxHeight: '400px',
+          overflowY: 'auto',
+        }}
+      >
+        {recentDocs.length === 0 ? (
+          <div
+            style={{
+              padding: '3rem 1.5rem',
+              textAlign: 'center',
+              color: 'var(--text-muted)',
+            }}
+          >
+            <Bell
+              size={32}
+              style={{ marginBottom: '0.75rem', opacity: 0.5 }}
+            />
+            <p style={{ fontSize: '0.8rem', margin: 0 }}>
+              Nenhuma notificação por aqui.
+            </p>
+            <p
+              style={{
+                fontSize: '0.7rem',
+                color: 'var(--text-dim)',
+                marginTop: '0.25rem',
+              }}
+            >
+              Novos documentos aparecerão aqui.
+            </p>
+          </div>
+        ) : (
+          recentDocs.map((doc) => (
+            <div
+              key={doc.id}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.75rem',
+                padding: '0.875rem 1.25rem',
+                borderBottom: '1px solid var(--border-primary)',
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--bg-card-hover)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              <div
+                style={{
+                  width: '2rem',
+                  height: '2rem',
+                  background:
+                    'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                  borderRadius: '0.5rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <FileText size={14} color="white" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p
+                  style={{
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    color: 'var(--text-primary)',
+                    margin: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Novo documento: {doc.code}
+                </p>
+                <p
+                  style={{
+                    fontSize: '0.7rem',
+                    color: 'var(--text-muted)',
+                    margin: '0.125rem 0 0',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {doc.title}
+                </p>
+                <p
+                  style={{
+                    fontSize: '0.65rem',
+                    color: 'var(--text-dim)',
+                    margin: '0.25rem 0 0',
+                  }}
+                >
+                  {new Date(doc.uploaded_at).toLocaleDateString('pt-BR')} às{' '}
+                  {new Date(doc.uploaded_at).toLocaleTimeString('pt-BR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Rodapé */}
+      {recentDocs.length > 0 && (
+        <button
+          onClick={() => {
+            onViewAll();
+            onClose();
+          }}
+          style={{
+            width: '100%',
+            padding: '0.875rem',
+            background: 'var(--bg-card)',
+            border: 'none',
+            borderTop: '1px solid var(--border-primary)',
+            color: 'var(--accent)',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.25rem',
+            transition: 'background 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'var(--bg-card-hover)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'var(--bg-card)';
+          }}
+        >
+          Ver todos os documentos
+          <ArrowRight size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
   const router = useRouter();
   const [documents, setDocuments] = useState<DocumentData[]>([]);
@@ -270,6 +519,9 @@ export default function Home() {
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [userInitial, setUserInitial] = useState('U');
+
+  // ✅ Estado do dropdown de notificações
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // ✅ Verifica autenticação
   useEffect(() => {
@@ -306,7 +558,7 @@ export default function Home() {
     checkAuth();
   }, [router]);
 
-  // ✅ Carrega configurações (tema)
+  // ✅ Carrega configurações
   useEffect(() => {
     loadSettings().then((s) => setDarkMode(s.darkMode));
   }, []);
@@ -439,7 +691,6 @@ export default function Home() {
             />
           </div>
 
-          {/* Grid Principal */}
           <div
             style={{
               display: 'grid',
@@ -455,7 +706,6 @@ export default function Home() {
                 gap: '1.25rem',
               }}
             >
-              {/* Card de Envio */}
               <div style={moduleStyles.card}>
                 <div style={moduleStyles.cardHeader}>
                   <h2 style={moduleStyles.cardTitle}>
@@ -523,7 +773,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Documentos Recentes */}
               <div style={moduleStyles.card}>
                 <div style={moduleStyles.cardHeader}>
                   <h2 style={moduleStyles.cardTitle}>
@@ -613,7 +862,6 @@ export default function Home() {
                 gap: '1.25rem',
               }}
             >
-              {/* Atividade Recente */}
               <div style={moduleStyles.card}>
                 <div style={moduleStyles.cardHeader}>
                   <h2 style={moduleStyles.cardTitle}>
@@ -703,18 +951,6 @@ export default function Home() {
                           )}
                         </p>
                       </div>
-                      <span
-                        style={{
-                          fontSize: '0.6rem',
-                          background: 'rgba(59, 130, 246, 0.15)',
-                          color: 'var(--accent-light)',
-                          padding: '0.125rem 0.375rem',
-                          borderRadius: '9999px',
-                          fontWeight: 600,
-                        }}
-                      >
-                        {doc.category}
-                      </span>
                       <ChevronRight size={14} color="var(--text-dim)" />
                     </div>
                   ))}
@@ -733,7 +969,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Banner */}
               <div
                 style={{
                   ...moduleStyles.card,
@@ -846,7 +1081,6 @@ export default function Home() {
                 />
               </div>
 
-              {/* Badges */}
               <div
                 style={{
                   display: 'grid',
@@ -912,12 +1146,53 @@ export default function Home() {
             </p>
           </div>
           <div style={pageStyles.headerActions}>
-            <button style={pageStyles.headerIconButton}>
-              <Bell size={16} />
-            </button>
-            <button style={pageStyles.headerIconButton}>
+            {/* ✅ Sino com dropdown */}
+            <div style={{ position: 'relative' }}>
+              <button
+                style={pageStyles.headerIconButton}
+                onClick={() => setShowNotifications(!showNotifications)}
+              >
+                <Bell size={16} />
+                {documents.length > 0 && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '-4px',
+                      right: '-4px',
+                      background: '#ef4444',
+                      color: 'white',
+                      fontSize: '0.6rem',
+                      fontWeight: 700,
+                      width: '1rem',
+                      height: '1rem',
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 0 0 2px var(--bg-primary)',
+                    }}
+                  >
+                    {documents.length > 9 ? '9+' : documents.length}
+                  </span>
+                )}
+              </button>
+              {showNotifications && (
+                <NotificationsDropdown
+                  documents={documents}
+                  onClose={() => setShowNotifications(false)}
+                  onViewAll={() => setActiveModule('documentos')}
+                />
+              )}
+            </div>
+
+            {/* ✅ Engrenagem → redireciona para Configurações */}
+            <button
+              style={pageStyles.headerIconButton}
+              onClick={() => setActiveModule('configuracoes')}
+            >
               <SettingsIcon size={16} />
             </button>
+
             <div style={pageStyles.headerAvatar}>{userInitial}</div>
             <div style={{ textAlign: 'left' }}>
               <p
