@@ -8,8 +8,6 @@ import {
   Upload,
   FileText,
   Settings,
-  Search,
-  FolderOpen,
   LogOut,
   ChevronDown,
   Circle,
@@ -35,7 +33,6 @@ export default function Sidebar({
   const [userEmail, setUserEmail] = useState('');
   const [userInitial, setUserInitial] = useState('U');
 
-  // ✅ Pega o usuário logado
   useEffect(() => {
     const getUser = async () => {
       const {
@@ -60,22 +57,20 @@ export default function Sidebar({
     getUser();
   }, []);
 
+  // ✅ Itens da sidebar (removidos "Buscar Documentos" e "Categorias")
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { id: 'upload', icon: Upload, label: 'Enviar Documentos' },
     { id: 'documentos', icon: FileText, label: 'Meus Documentos' },
-    { id: 'buscar', icon: Search, label: 'Buscar Documentos' },
-    { id: 'categorias', icon: FolderOpen, label: 'Categorias' },
     { id: 'configuracoes', icon: Settings, label: 'Configurações' },
   ];
 
   const handleClick = (id: string) => {
+    if (id === 'upload') {
+      router.push('/upload');
+      return;
+    }
     onModuleChange(id);
-
-    if (id === 'dashboard') router.push('/');
-    else if (id === 'upload') router.push('/upload');
-    else if (id === 'documentos') onModuleChange('documentos');
-    else if (id === 'configuracoes') onModuleChange('configuracoes');
   };
 
   const handleLogout = async () => {
@@ -135,7 +130,7 @@ export default function Sidebar({
         })}
       </nav>
 
-      {/* ✅ Usuário dinâmico */}
+      {/* Usuário */}
       <div style={sidebarStyles.adminContainer}>
         <div style={sidebarStyles.adminInner}>
           <div style={sidebarStyles.adminAvatar}>{userInitial}</div>
