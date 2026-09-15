@@ -1,4 +1,3 @@
-
 // lib/settings.ts
 import { supabase } from './supabase';
 
@@ -12,7 +11,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  darkMode: true, // ✅ Padrão agora é dark
+  darkMode: true,
   notifications: true,
   autoOCR: true,
   saveHistory: true,
@@ -22,20 +21,20 @@ export const DEFAULT_SETTINGS: Settings = {
 
 const STORAGE_KEY = 'sgi_docs_settings';
 
-// ✅ Carrega as configurações (localStorage + Supabase)
+// ✅ Carrega as configurações
 export async function loadSettings(): Promise<Settings> {
-  // 1. Tenta do localStorage primeiro (rápido)
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      return { ...DEFAULT_SETTINGS, ...parsed };
+      const settings = { ...DEFAULT_SETTINGS, ...parsed };
+      applyTheme(settings.darkMode);
+      return settings;
     }
   } catch (err) {
     console.warn('Erro ao ler localStorage:', err);
   }
 
-  // 2. Tenta do Supabase
   try {
     const {
       data: { user },
@@ -58,6 +57,7 @@ export async function loadSettings(): Promise<Settings> {
           storageLimit: data.storage_limit ?? DEFAULT_SETTINGS.storageLimit,
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+        applyTheme(settings.darkMode);
         return settings;
       }
     }
@@ -65,18 +65,15 @@ export async function loadSettings(): Promise<Settings> {
     console.warn('Erro ao ler do Supabase:', err);
   }
 
+  applyTheme(DEFAULT_SETTINGS.darkMode);
   return DEFAULT_SETTINGS;
 }
 
-// ✅ Salva as configurações (localStorage + Supabase)
+// ✅ Salva as configurações
 export async function saveSettings(settings: Settings): Promise<void> {
-  // 1. Salva no localStorage (sempre)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  applyTheme(settings.darkMode);
 
-  // 2. Aplica o tema escuro no body
-  applyDarkMode(settings.darkMode);
-
-  // 3. Tenta salvar no Supabase (se logado)
   try {
     const {
       data: { user },
@@ -102,25 +99,22 @@ export async function saveSettings(settings: Settings): Promise<void> {
   }
 }
 
-// ✅ Aplica o tema escuro no body
-export function applyDarkMode(isDark: boolean) {
+// ✅ Aplica o tema no <html>
+export function applyTheme(isDark: boolean) {
   if (typeof document === 'undefined') return;
 
+  const html = document.documentElement;
   if (isDark) {
-    document.body.setAttribute('data-theme', 'dark');
-    document.body.style.background = '#050f1f';
-    document.body.style.color = 'white';
+    html.setAttribute('data-theme', 'dark');
   } else {
-    document.body.removeAttribute('data-theme');
-    document.body.style.background = '#f8fafc';
-    document.body.style.color = '#0f172a';
+    html.setAttribute('data-theme', 'light');
   }
 }
 
-// ✅ Resetar configurações
+// ✅ Resetar
 export async function resetSettings(): Promise<Settings> {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_SETTINGS));
-  applyDarkMode(DEFAULT_SETTINGS.darkMode);
+  applyTheme(DEFAULT_SETTINGS.darkMode);
 
   try {
     const {
