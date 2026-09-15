@@ -1,6 +1,7 @@
 // app/Sidebar.tsx
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -14,6 +15,7 @@ import {
   Circle,
 } from 'lucide-react';
 import { sidebarStyles } from './styles';
+import { supabase } from './lib/supabase';
 
 interface SidebarProps {
   activeModule: string;
@@ -29,6 +31,34 @@ export default function Sidebar({
   setDarkMode,
 }: SidebarProps) {
   const router = useRouter();
+  const [userName, setUserName] = useState('');
+  const [userEmail, setUserEmail] = useState('');
+  const [userInitial, setUserInitial] = useState('U');
+
+  // ✅ Pega o usuário logado
+  useEffect(() => {
+    const getUser = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        const email = user.email || '';
+        const namePart = email.split('@')[0];
+        const formattedName = namePart
+          .replace(/[._-]/g, ' ')
+          .split(' ')
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+
+        setUserName(formattedName);
+        setUserEmail(email);
+        setUserInitial(formattedName.charAt(0).toUpperCase());
+      }
+    };
+
+    getUser();
+  }, []);
 
   const menuItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -86,7 +116,8 @@ export default function Sidebar({
               style={sidebarStyles.menuItem(isActive)}
               onMouseEnter={(e) => {
                 if (!isActive) {
-                  e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.08)';
+                  e.currentTarget.style.backgroundColor =
+                    'rgba(59, 130, 246, 0.08)';
                   e.currentTarget.style.color = 'white';
                 }
               }}
@@ -104,13 +135,13 @@ export default function Sidebar({
         })}
       </nav>
 
-      {/* Admin */}
+      {/* ✅ Usuário dinâmico */}
       <div style={sidebarStyles.adminContainer}>
         <div style={sidebarStyles.adminInner}>
-          <div style={sidebarStyles.adminAvatar}>A</div>
+          <div style={sidebarStyles.adminAvatar}>{userInitial}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={sidebarStyles.adminName}>Administrador</p>
-            <p style={sidebarStyles.adminEmail}>admin@sgi.docs</p>
+            <p style={sidebarStyles.adminName}>{userName || 'Carregando...'}</p>
+            <p style={sidebarStyles.adminEmail}>{userEmail || '...'}</p>
           </div>
           <ChevronDown size={14} color="#94a3b8" />
         </div>
