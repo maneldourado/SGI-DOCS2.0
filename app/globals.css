@@ -4,112 +4,118 @@
 @tailwind utilities;
 
 /* ============================================ */
-/* ✅ RESET */
+/* ✅ VARIÁVEIS DE TEMA (padrão = dark) */
 /* ============================================ */
-:root {
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 5, 15, 31;
-  --background-end-rgb: 5, 15, 31;
+:root,
+html[data-theme='dark'] {
+  --bg-primary: #050f1f;
+  --bg-secondary: #0a1628;
+  --bg-card: rgba(15, 30, 58, 0.5);
+  --bg-card-hover: rgba(30, 58, 95, 0.4);
+  --bg-input: rgba(30, 58, 95, 0.2);
+  --bg-sidebar: #0a1628;
+
+  --border-primary: rgba(59, 130, 246, 0.15);
+  --border-hover: rgba(59, 130, 246, 0.4);
+  --border-input: rgba(59, 130, 246, 0.2);
+
+  --text-primary: #ffffff;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-light: #60a5fa;
 }
 
+/* ============================================ */
+/* ✅ TEMA CLARO */
+/* ============================================ */
+html[data-theme='light'] {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f1f5f9;
+  --bg-input: #ffffff;
+  --bg-sidebar: #ffffff;
+
+  --border-primary: #e2e8f0;
+  --border-hover: #cbd5e1;
+  --border-input: #d1d5db;
+
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --text-dim: #94a3b8;
+
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-light: #3b82f6;
+}
+
+/* ============================================ */
+/* ✅ APLICAÇÃO DAS VARIÁVEIS */
+/* ============================================ */
+html,
 body {
-  color: rgb(var(--foreground-rgb));
-  background: rgb(var(--background-start-rgb));
+  background: var(--bg-primary);
+  color: var(--text-primary);
   margin: 0;
   padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  transition: background 0.3s, color 0.3s;
 }
 
-/* ============================================ */
-/* ✅ INPUTS PADRÃO (fundo branco) - apenas fora do dark */
-/* ============================================ */
-input:not([data-theme='dark']):not([type='checkbox']):not([type='radio']),
-textarea:not([data-theme='dark']) {
-  color: #000000 !important;
-  background-color: #ffffff !important;
+/* ✅ Sidebar */
+aside {
+  background: var(--bg-sidebar) !important;
+  border-right: 1px solid var(--border-primary) !important;
 }
 
-input:not([data-theme='dark'])::placeholder,
-textarea:not([data-theme='dark'])::placeholder {
-  color: #9ca3af !important;
+/* ✅ Cards */
+.card,
+[data-card] {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-primary) !important;
 }
 
-/* ============================================ */
-/* ✅ SELECTS PADRÃO (fundo branco) */
-/* ============================================ */
-select:not([data-theme='dark']) {
-  color: #000000 !important;
-  background-color: #ffffff !important;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
+/* ✅ Inputs */
+input:not([type='checkbox']):not([type='radio']),
+textarea,
+select {
+  background: var(--bg-input) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-input) !important;
 }
 
-select:not([data-theme='dark']) option {
-  color: #000000 !important;
-  background-color: #ffffff !important;
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-dim) !important;
 }
 
-/* ============================================ */
-/* ✅ INPUTS DARK (login) */
-/* ============================================ */
-input[data-theme='dark']:not([type='checkbox']):not([type='radio']),
-textarea[data-theme='dark'] {
-  color: #ffffff !important;
-  -webkit-text-fill-color: #ffffff !important;
-  background-color: transparent !important;
-  caret-color: #ffffff !important;
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
 }
 
-input[data-theme='dark']::placeholder,
-textarea[data-theme='dark']::placeholder {
-  color: #94a3b8 !important;
-  opacity: 1 !important;
-  -webkit-text-fill-color: #94a3b8 !important;
-}
-
-/* ============================================ */
-/* ✅ SELECTS DARK (upload) */
-/* ============================================ */
-select[data-theme='dark'] {
-  color: #ffffff !important;
-  background-color: #0f1e3a !important;
-  -webkit-text-fill-color: #ffffff !important;
-  border-color: rgba(59, 130, 246, 0.2) !important;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
-}
-
-select[data-theme='dark'] option {
-  color: #ffffff !important;
-  background-color: #0f1e3a !important;
-  -webkit-text-fill-color: #ffffff !important;
-}
-
-/* ============================================ */
-/* ✅ CHECKBOX E RADIO */
-/* ============================================ */
+/* ✅ Checkbox */
 input[type='checkbox'],
 input[type='radio'] {
-  accent-color: #3b82f6 !important;
+  accent-color: var(--accent) !important;
   cursor: pointer;
-  width: 1rem;
-  height: 1rem;
 }
 
-/* ============================================ */
-/* ✅ AUTOFILL */
-/* ============================================ */
+/* ✅ Autofill */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
-input:-webkit-autofill:focus,
-input:-webkit-autofill:active {
-  -webkit-text-fill-color: #ffffff !important;
-  -webkit-box-shadow: 0 0 0 1000px #0f1e3a inset !important;
-  box-shadow: 0 0 0 1000px #0f1e3a inset !important;
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text-primary) !important;
+  -webkit-box-shadow: 0 0 0 1000px var(--bg-input) inset !important;
   transition: background-color 5000s ease-in-out 0s !important;
-  caret-color: #ffffff !important;
+  caret-color: var(--text-primary) !important;
 }
 
 input::-webkit-contacts-auto-fill-button,
@@ -118,50 +124,7 @@ input::-webkit-credentials-auto-fill-button {
   display: none !important;
 }
 
-/* ============================================ */
-/* ✅ BOTÕES AZUIS */
-/* ============================================ */
-button.bg-blue-600,
-button.bg-blue-500,
-button.bg-blue-700 {
-  color: #ffffff !important;
-  background-color: #2563eb !important;
-}
-
-/* ============================================ */
-/* ✅ LABELS (cor clara no dark, escura no claro) */
-/* ============================================ */
-label {
-  color: inherit;
-}
-
-label[data-theme='dark'] {
-  color: #cbd5e1 !important;
-}
-
-/* ============================================ */
-/* ✅ SIDEBAR */
-/* ============================================ */
-aside button {
-  background-color: transparent !important;
-  color: #f1f5f9 !important;
-}
-
-aside button:hover {
-  background-color: rgba(255, 255, 255, 0.15) !important;
-  color: white !important;
-}
-
-aside button.bg-blue-600,
-aside button.bg-blue-500,
-aside button.bg-blue-700 {
-  background-color: #2563eb !important;
-  color: white !important;
-}
-
-/* ============================================ */
-/* ✅ ANIMAÇÕES */
-/* ============================================ */
+/* ✅ Animações */
 @keyframes spin {
   from {
     transform: rotate(0deg);
