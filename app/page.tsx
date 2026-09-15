@@ -1,7 +1,7 @@
 // app/page.tsx
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   FileText,
@@ -24,6 +24,7 @@ import {
   Lock,
   X,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import Sidebar from './Sidebar';
 import BuscarDocumentosModule from './BuscarDocumentosModule';
@@ -35,7 +36,106 @@ import { supabase } from './lib/supabase';
 import { loadSettings } from './lib/settings';
 import type { DocumentData } from './lib/supabase';
 
-// ✅ MetricCard
+// ============================================================
+// Constantes
+// ============================================================
+
+const LAST_SEEN_NOTIFICATIONS_KEY = 'sgi:lastSeenNotificationsAt';
+const RECENT_DOCS_IN_DROPDOWN = 8;
+const RECENT_ACTIVITY_LIMIT = 5;
+const RECENT_DOCUMENTS_ON_DASHBOARD = 4;
+
+// ============================================================
+// Utilidades
+// ============================================================
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return 'Erro desconhecido';
+  }
+}
+
+/** Formata o nome do usuário a partir do e-mail. */
+function formatNameFromEmail(email: string): string {
+  if (!email) return '';
+  const namePart = email.split('@')[0] || '';
+  return namePart
+    .replace(/\+.*$/, '')
+    .replace(/[._-]+/g, ' ')
+    .replace(/\d+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/** Converte string em bytes reais (UTF-8). */
+function utf8ByteLength(text: string): number {
+  if (typeof TextEncoder !== 'undefined') {
+    return new TextEncoder().encode(text).length;
+  }
+  // Fallback
+  return unescape(encodeURIComponent(text)).length;
+}
+
+/** Formata bytes em unidade legível. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/** Ordena por uploaded_at DESC, sem mutar o array original. */
+function sortByUploadedAtDesc(docs: DocumentData[]): DocumentData[] {
+  return [...docs].sort((a, b) => {
+    const ta = new Date(a.uploaded_at).getTime();
+    const tb = new Date(b.uploaded_at).getTime();
+    return tb - ta;
+  });
+}
+
+function getLastSeenNotificationsAt(): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = window.localStorage.getItem(LAST_SEEN_NOTIFICATIONS_KEY);
+    if (!raw) return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function setLastSeenNotificationsAt(ts: number): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(LAST_SEEN_NOTIFICATIONS_KEY, String(ts));
+  } catch {
+    /* ignora */
+  }
+}
+
+// ============================================================
+// MetricCard
+// ============================================================
+
+interface MetricCardProps {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  subtitle: string;
+  iconBg: string;
+  trend?: string;
+  loading?: boolean;
+}
+
 function MetricCard({
   icon: Icon,
   label,
@@ -43,14 +143,8 @@ function MetricCard({
   subtitle,
   iconBg,
   trend,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  subtitle: string;
-  iconBg: string;
-  trend?: string;
-}) {
+  loading,
+}: MetricCardProps) {
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -68,10 +162,10 @@ function MetricCard({
       </div>
       <div style={metricCardStyles.textContainer}>
         <p style={metricCardStyles.label}>{label}</p>
-        <p style={metricCardStyles.value}>{value}</p>
+        <p style={metricCardStyles.value}>{loading ? '—' : value}</p>
         <p style={metricCardStyles.subtitle}>{subtitle}</p>
       </div>
-      {trend && (
+      {trend && !loading && (
         <div style={metricCardStyles.trend}>
           <TrendingUp size={12} />
           {trend}
@@ -81,15 +175,29 @@ function MetricCard({
   );
 }
 
-// ✅ DocumentCard
-function DocumentCard({
-  doc,
-  onDelete,
-}: {
+// ============================================================
+// DocumentCard
+// ============================================================
+
+interface DocumentCardProps {
   doc: DocumentData;
   onDelete: (id: string) => void;
-}) {
+  deleting?: boolean;
+}
+
+function DocumentCard({ doc, onDelete, deleting }: DocumentCardProps) {
   const [hovered, setHovered] = useState(false);
+
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const label = doc.code || doc.title || 'este documento';
+    const ok =
+      typeof window !== 'undefined'
+        ? window.confirm(`Excluir "${label}"? Essa ação não pode ser desfeita.`)
+        : true;
+    if (!ok) return;
+    onDelete(String(doc.id));
+  };
 
   return (
     <div
@@ -97,6 +205,8 @@ function DocumentCard({
         ...moduleStyles.docItem,
         background: hovered ? 'var(--bg-card-hover)' : 'var(--bg-card)',
         borderColor: hovered ? 'var(--border-hover)' : 'var(--border-primary)',
+        opacity: deleting ? 0.5 : 1,
+        pointerEvents: deleting ? 'none' : 'auto',
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -122,27 +232,41 @@ function DocumentCard({
           fontWeight: 600,
         }}
       >
-        {doc.category}
+        {doc.category || 'Sem categoria'}
       </span>
       <button
-        onClick={() => onDelete(doc.id)}
+        type="button"
+        aria-label={`Excluir ${doc.code || doc.title || 'documento'}`}
+        title="Excluir"
+        disabled={deleting}
+        onClick={handleDeleteClick}
         style={{
           ...moduleStyles.docMenu,
           color: hovered ? '#ef4444' : 'var(--text-dim)',
+          cursor: deleting ? 'wait' : 'pointer',
         }}
       >
-        <MoreVertical size={14} />
+        {deleting ? <Loader2 size={14} className="spin" /> : <MoreVertical size={14} />}
       </button>
     </div>
   );
 }
 
-// ✅ Donut Chart
+// ============================================================
+// CategoryDonut
+// ============================================================
+
+interface CategoryDatum {
+  label: string;
+  value: number;
+  color: string;
+}
+
 function CategoryDonut({
   data,
   total,
 }: {
-  data: { label: string; value: number; color: string }[];
+  data: CategoryDatum[];
   total: number;
 }) {
   const radius = 60;
@@ -152,7 +276,7 @@ function CategoryDonut({
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
       <div style={{ position: 'relative', width: '160px', height: '160px' }}>
-        <svg width="160" height="160" viewBox="0 0 160 160">
+        <svg width="160" height="160" viewBox="0 0 160 160" role="img" aria-label="Distribuição por categoria">
           <circle
             cx="80"
             cy="80"
@@ -161,24 +285,24 @@ function CategoryDonut({
             stroke="rgba(59, 130, 246, 0.1)"
             strokeWidth="20"
           />
-          {data.map((item, i) => {
-            const percentage = total > 0 ? item.value / total : 0;
+          {data.map((item) => {
+            if (item.value <= 0 || total <= 0) return null;
+            const percentage = Math.min(1, item.value / total);
             const dashLength = percentage * circumference;
+            const remaining = Math.max(0, circumference - dashLength);
             const dashOffset = -currentOffset;
             currentOffset += dashLength;
 
-            if (item.value === 0) return null;
-
             return (
               <circle
-                key={i}
+                key={item.label}
                 cx="80"
                 cy="80"
                 r={radius}
                 fill="none"
                 stroke={item.color}
                 strokeWidth="20"
-                strokeDasharray={`${dashLength} ${circumference - dashLength}`}
+                strokeDasharray={`${dashLength} ${remaining}`}
                 strokeDashoffset={dashOffset}
                 transform="rotate(-90 80 80)"
                 strokeLinecap="butt"
@@ -226,9 +350,20 @@ function CategoryDonut({
           gap: '0.5rem',
         }}
       >
-        {data.map((item, i) => (
+        {data.length === 0 && (
+          <p
+            style={{
+              fontSize: '0.75rem',
+              color: 'var(--text-dim)',
+              margin: 0,
+            }}
+          >
+            Nenhuma categoria cadastrada.
+          </p>
+        )}
+        {data.map((item) => (
           <div
-            key={i}
+            key={item.label}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -261,16 +396,23 @@ function CategoryDonut({
   );
 }
 
-// ✅ NotificationsDropdown
+// ============================================================
+// NotificationsDropdown
+// ============================================================
+
+interface NotificationsDropdownProps {
+  documents: DocumentData[];
+  onClose: () => void;
+  onViewAll: () => void;
+  onOpenDocument: (doc: DocumentData) => void;
+}
+
 function NotificationsDropdown({
   documents,
   onClose,
   onViewAll,
-}: {
-  documents: DocumentData[];
-  onClose: () => void;
-  onViewAll: () => void;
-}) {
+  onOpenDocument,
+}: NotificationsDropdownProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Fecha ao clicar fora
@@ -287,12 +429,22 @@ function NotificationsDropdown({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
-  // Pega os 8 últimos documentos
-  const recentDocs = documents.slice(0, 8);
+  // Fecha com Esc
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  const recentDocs = documents.slice(0, RECENT_DOCS_IN_DROPDOWN);
 
   return (
     <div
       ref={dropdownRef}
+      role="dialog"
+      aria-label="Notificações"
       style={{
         position: 'absolute',
         top: 'calc(100% + 0.5rem)',
@@ -345,6 +497,8 @@ function NotificationsDropdown({
           )}
         </div>
         <button
+          type="button"
+          aria-label="Fechar notificações"
           onClick={onClose}
           style={{
             background: 'none',
@@ -360,12 +514,7 @@ function NotificationsDropdown({
       </div>
 
       {/* Lista */}
-      <div
-        style={{
-          maxHeight: '400px',
-          overflowY: 'auto',
-        }}
-      >
+      <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
         {recentDocs.length === 0 ? (
           <div
             style={{
@@ -393,15 +542,25 @@ function NotificationsDropdown({
           </div>
         ) : (
           recentDocs.map((doc) => (
-            <div
+            <button
               key={doc.id}
+              type="button"
+              onClick={() => {
+                onOpenDocument(doc);
+                onClose();
+              }}
               style={{
+                width: '100%',
                 display: 'flex',
                 alignItems: 'flex-start',
                 gap: '0.75rem',
                 padding: '0.875rem 1.25rem',
                 borderBottom: '1px solid var(--border-primary)',
+                background: 'transparent',
+                border: 'none',
+                borderBottomStyle: 'solid',
                 cursor: 'pointer',
+                textAlign: 'left',
                 transition: 'background 0.2s',
               }}
               onMouseEnter={(e) => {
@@ -466,7 +625,7 @@ function NotificationsDropdown({
                   })}
                 </p>
               </div>
-            </div>
+            </button>
           ))
         )}
       </div>
@@ -474,6 +633,7 @@ function NotificationsDropdown({
       {/* Rodapé */}
       {recentDocs.length > 0 && (
         <button
+          type="button"
           onClick={() => {
             onViewAll();
             onClose();
@@ -509,8 +669,13 @@ function NotificationsDropdown({
   );
 }
 
+// ============================================================
+// Home
+// ============================================================
+
 export default function Home() {
   const router = useRouter();
+
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [loading, setLoading] = useState(true);
   const [authChecking, setAuthChecking] = useState(true);
@@ -519,96 +684,238 @@ export default function Home() {
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [userInitial, setUserInitial] = useState('U');
-
-  // ✅ Estado do dropdown de notificações
   const [showNotifications, setShowNotifications] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  // ✅ Verifica autenticação
+  // ----------------------------------------------------------
+  // Autenticação + listener de mudança de estado
+  // ----------------------------------------------------------
   useEffect(() => {
+    let cancelled = false;
+
+    const applyUser = (email: string) => {
+      const formatted = formatNameFromEmail(email) || 'Usuário';
+      setUserName(formatted);
+      setUserEmail(email);
+      setUserInitial(formatted.charAt(0).toUpperCase() || 'U');
+    };
+
     const checkAuth = async () => {
       try {
         const {
           data: { user },
+          error,
         } = await supabase.auth.getUser();
 
-        if (!user) {
-          router.push('/login');
+        if (cancelled) return;
+
+        if (error) {
+          // Erro de rede ou sessão inválida.
+          // Se for 401 (sem sessão), vai pro login.
+          // Caso contrário, mantém o usuário na página (pode ser erro transitório).
+          const status =
+            (error as { status?: number }).status ?? undefined;
+          if (status === 401 || status === 403) {
+            router.replace('/login');
+            return;
+          }
+          console.error('Erro ao verificar autenticação:', getErrorMessage(error));
+          // Em erro transitório, libera a UI sem redirecionar.
+          setAuthChecking(false);
           return;
         }
 
-        const email = user.email || '';
-        const namePart = email.split('@')[0];
-        const formattedName = namePart
-          .replace(/[._-]/g, ' ')
-          .split(' ')
-          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-          .join(' ');
+        if (!user) {
+          router.replace('/login');
+          return;
+        }
 
-        setUserName(formattedName);
-        setUserEmail(email);
-        setUserInitial(formattedName.charAt(0).toUpperCase());
+        applyUser(user.email || '');
       } catch (err) {
-        console.error('Erro ao verificar autenticação:', err);
-        router.push('/login');
+        if (cancelled) return;
+        console.error('Erro inesperado na autenticação:', getErrorMessage(err));
+        router.replace('/login');
       } finally {
-        setAuthChecking(false);
+        if (!cancelled) setAuthChecking(false);
       }
     };
 
     checkAuth();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (cancelled) return;
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        router.replace('/login');
+        return;
+      }
+      if (session.user.email) {
+        applyUser(session.user.email);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, [router]);
 
-  // ✅ Carrega configurações
+  // ----------------------------------------------------------
+  // Configurações
+  // ----------------------------------------------------------
   useEffect(() => {
-    loadSettings().then((s) => setDarkMode(s.darkMode));
+    let cancelled = false;
+    loadSettings()
+      .then((s) => {
+        if (!cancelled) setDarkMode(Boolean(s?.darkMode));
+      })
+      .catch((err) => {
+        console.error('Erro ao carregar configurações:', getErrorMessage(err));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // ✅ Buscar documentos
+  // ----------------------------------------------------------
+  // Buscar documentos
+  // ----------------------------------------------------------
   useEffect(() => {
     if (authChecking) return;
 
-    getAllDocuments()
-      .then((docs) => setDocuments(docs))
-      .catch((err) => console.error('Erro ao buscar documentos:', err))
-      .finally(() => setLoading(false));
+    const controller = new AbortController();
+    let cancelled = false;
+
+    setLoading(true);
+
+    getAllDocuments({ signal: controller.signal })
+      .then((docs) => {
+        if (cancelled) return;
+        setDocuments(sortByUploadedAtDesc(docs));
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        console.error('Erro ao buscar documentos:', getErrorMessage(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [authChecking]);
 
-  // ✅ Excluir documento
-  const handleDelete = async (id: string) => {
+  // ----------------------------------------------------------
+  // Notificações não lidas
+  // ----------------------------------------------------------
+  useEffect(() => {
+    const lastSeen = getLastSeenNotificationsAt();
+    const count = documents.filter(
+      (d) => new Date(d.uploaded_at).getTime() > lastSeen
+    ).length;
+    setUnreadCount(count);
+  }, [documents]);
+
+  const handleOpenNotifications = useCallback(() => {
+    setShowNotifications((prev) => {
+      const next = !prev;
+      if (next) {
+        // Marca como lido ao abrir
+        setLastSeenNotificationsAt(Date.now());
+        setUnreadCount(0);
+      }
+      return next;
+    });
+  }, []);
+
+  // ----------------------------------------------------------
+  // Excluir documento
+  // ----------------------------------------------------------
+  const handleDelete = useCallback(async (id: string) => {
+    setDeletingId(id);
     try {
       await deleteDocument(id);
-      setDocuments((prev) => prev.filter((d) => d.id !== id));
+      setDocuments((prev) => prev.filter((d) => String(d.id) !== id));
     } catch (err) {
-      console.error('Erro ao excluir:', err);
+      console.error('Erro ao excluir:', getErrorMessage(err));
+      if (typeof window !== 'undefined') {
+        window.alert(
+          `Não foi possível excluir o documento: ${getErrorMessage(err)}`
+        );
+      }
+    } finally {
+      setDeletingId(null);
     }
-  };
+  }, []);
 
+  // ----------------------------------------------------------
+  // Métricas derivadas (memoizadas)
+  // ----------------------------------------------------------
   const totalDocuments = documents.length;
-  const totalCategories = new Set(documents.map((d) => d.category)).size;
-  const todayDocs = documents.filter(
-    (d) => new Date(d.uploaded_at).toDateString() === new Date().toDateString()
-  ).length;
-  const totalSize = documents.reduce(
-    (acc, doc) => acc + (doc.content?.length || 0),
-    0
+
+  const totalCategories = useMemo(
+    () => new Set(documents.map((d) => d.category || 'Sem categoria')).size,
+    [documents]
   );
 
-  const categoryColors = ['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#64748b'];
-  const categoryMap = new Map<string, number>();
-  documents.forEach((d) => {
-    categoryMap.set(d.category, (categoryMap.get(d.category) || 0) + 1);
-  });
-  const categoryData = Array.from(categoryMap.entries())
-    .map(([label, value], i) => ({
-      label,
-      value,
-      color: categoryColors[i % categoryColors.length],
-    }))
-    .slice(0, 5);
+  const todayDocs = useMemo(() => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = today.getMonth();
+    const d = today.getDate();
+    return documents.filter((doc) => {
+      const dt = new Date(doc.uploaded_at);
+      return (
+        dt.getFullYear() === y && dt.getMonth() === m && dt.getDate() === d
+      );
+    }).length;
+  }, [documents]);
 
-  const recentActivity = documents.slice(0, 5);
+  const totalBytes = useMemo(() => {
+    let acc = 0;
+    for (const doc of documents) {
+      const text = doc.content || '';
+      acc += utf8ByteLength(text);
+    }
+    return acc;
+  }, [documents]);
 
-  // ✅ Loading
+  const categoryData = useMemo<CategoryDatum[]>(() => {
+    const palette = ['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#64748b'];
+    const map = new Map<string, number>();
+    for (const d of documents) {
+      const key = d.category || 'Sem categoria';
+      map.set(key, (map.get(key) || 0) + 1);
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([label, value], i) => ({
+        label,
+        value,
+        color: palette[i % palette.length],
+      }));
+  }, [documents]);
+
+  const recentActivity = useMemo(
+    () => documents.slice(0, RECENT_ACTIVITY_LIMIT),
+    [documents]
+  );
+
+  const recentDocuments = useMemo(
+    () => documents.slice(0, RECENT_DOCUMENTS_ON_DASHBOARD),
+    [documents]
+  );
+
+  // ----------------------------------------------------------
+  // Render
+  // ----------------------------------------------------------
+
   if (authChecking) {
     return (
       <div
@@ -664,7 +971,7 @@ export default function Home() {
               value={String(totalDocuments)}
               subtitle="Documentos no sistema"
               iconBg="linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)"
-              trend="100%"
+              loading={loading}
             />
             <MetricCard
               icon={FolderOpen}
@@ -672,6 +979,7 @@ export default function Home() {
               value={String(totalCategories)}
               subtitle="Categorias cadastradas"
               iconBg="linear-gradient(135deg, #10b981 0%, #059669 100%)"
+              loading={loading}
             />
             <MetricCard
               icon={Clock3}
@@ -679,15 +987,15 @@ export default function Home() {
               value={String(todayDocs)}
               subtitle="Novos documentos enviados"
               iconBg="linear-gradient(135deg, #f59e0b 0%, #d97706 100%)"
-              trend="100%"
+              loading={loading}
             />
             <MetricCard
               icon={HardDrive}
-              label="Armazenamento"
-              value={`${(totalSize / 1024).toFixed(1)} KB`}
-              subtitle="Espaço utilizado"
+              label="Texto Indexado"
+              value={formatBytes(totalBytes)}
+              subtitle="Volume de conteúdo textual"
               iconBg="linear-gradient(135deg, #a855f7 0%, #9333ea 100%)"
-              trend="100%"
+              loading={loading}
             />
           </div>
 
@@ -780,6 +1088,7 @@ export default function Home() {
                     Documentos Recentes
                   </h2>
                   <button
+                    type="button"
                     onClick={() => setActiveModule('documentos')}
                     style={{
                       fontSize: '0.7rem',
@@ -810,11 +1119,12 @@ export default function Home() {
                     </p>
                   )}
                   {!loading &&
-                    documents.slice(0, 4).map((doc) => (
+                    recentDocuments.map((doc) => (
                       <DocumentCard
-                        key={doc.id}
+                        key={String(doc.id)}
                         doc={doc}
                         onDelete={handleDelete}
+                        deleting={deletingId === String(doc.id)}
                       />
                     ))}
                   {!loading && documents.length === 0 && (
@@ -869,6 +1179,7 @@ export default function Home() {
                     Atividade Recente
                   </h2>
                   <button
+                    type="button"
                     onClick={() => setActiveModule('documentos')}
                     style={{
                       fontSize: '0.7rem',
@@ -894,7 +1205,7 @@ export default function Home() {
                 >
                   {recentActivity.map((doc) => (
                     <div
-                      key={doc.id}
+                      key={String(doc.id)}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -944,10 +1255,7 @@ export default function Home() {
                           às{' '}
                           {new Date(doc.uploaded_at).toLocaleTimeString(
                             'pt-BR',
-                            {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            }
+                            { hour: '2-digit', minute: '2-digit' }
                           )}
                         </p>
                       </div>
@@ -1047,6 +1355,7 @@ export default function Home() {
                     e segura.
                   </p>
                   <button
+                    type="button"
                     onClick={() => setActiveModule('documentos')}
                     style={{
                       background:
@@ -1092,9 +1401,9 @@ export default function Home() {
                   { icon: Shield, label: 'Segurança' },
                   { icon: ScanText, label: 'OCR Inteligente' },
                   { icon: Lock, label: 'LGPD' },
-                ].map((item, i) => (
+                ].map((item) => (
                   <div
-                    key={i}
+                    key={item.label}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -1118,11 +1427,16 @@ export default function Home() {
           </div>
         </>
       );
-    } else if (activeModule === 'documentos') {
+    }
+
+    if (activeModule === 'documentos') {
       return <DocumentosModule />;
-    } else if (activeModule === 'configuracoes') {
+    }
+
+    if (activeModule === 'configuracoes') {
       return <ConfiguracoesModule />;
     }
+
     return null;
   };
 
@@ -1146,14 +1460,22 @@ export default function Home() {
             </p>
           </div>
           <div style={pageStyles.headerActions}>
-            {/* ✅ Sino com dropdown */}
+            {/* Sino com dropdown */}
             <div style={{ position: 'relative' }}>
               <button
+                type="button"
+                aria-label={
+                  unreadCount > 0
+                    ? `Notificações (${unreadCount} não lidas)`
+                    : 'Notificações'
+                }
+                aria-expanded={showNotifications}
+                aria-haspopup="dialog"
                 style={pageStyles.headerIconButton}
-                onClick={() => setShowNotifications(!showNotifications)}
+                onClick={handleOpenNotifications}
               >
                 <Bell size={16} />
-                {documents.length > 0 && (
+                {unreadCount > 0 && (
                   <span
                     style={{
                       position: 'absolute',
@@ -1163,16 +1485,17 @@ export default function Home() {
                       color: 'white',
                       fontSize: '0.6rem',
                       fontWeight: 700,
-                      width: '1rem',
+                      minWidth: '1rem',
                       height: '1rem',
-                      borderRadius: '50%',
+                      padding: '0 0.25rem',
+                      borderRadius: '9999px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       boxShadow: '0 0 0 2px var(--bg-primary)',
                     }}
                   >
-                    {documents.length > 9 ? '9+' : documents.length}
+                    {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}
               </button>
@@ -1181,19 +1504,24 @@ export default function Home() {
                   documents={documents}
                   onClose={() => setShowNotifications(false)}
                   onViewAll={() => setActiveModule('documentos')}
+                  onOpenDocument={() => setActiveModule('documentos')}
                 />
               )}
             </div>
 
-            {/* ✅ Engrenagem → redireciona para Configurações */}
+            {/* Engrenagem → Configurações */}
             <button
+              type="button"
+              aria-label="Abrir configurações"
               style={pageStyles.headerIconButton}
               onClick={() => setActiveModule('configuracoes')}
             >
               <SettingsIcon size={16} />
             </button>
 
-            <div style={pageStyles.headerAvatar}>{userInitial}</div>
+            <div style={pageStyles.headerAvatar} aria-hidden="true">
+              {userInitial}
+            </div>
             <div style={{ textAlign: 'left' }}>
               <p
                 style={{
