@@ -861,64 +861,6 @@ export default function Home() {
         darkMode={darkMode}
         setDarkMode={setDarkMode}
       />
-
-      <div style={pageStyles.mainContent}>
-        <header style={pageStyles.header}>
-          <div>
-            <h1 style={pageStyles.headerTitle}>
-              Bem-vindo de volta, {userName}! 👋
-            </h1>
-            <p style={pageStyles.headerSubtitle}>
-              Aqui está um resumo da sua gestão de documentos.
-            </p>
-          </div>
-          <div style={pageStyles.headerActions}>
-            <div style={pageStyles.searchBar}>
-              <Search size={14} color="#64748b" />
-              <input
-                type="text"
-                placeholder="Buscar documentos, códigos, títulos..."
-                style={pageStyles.searchInput}
-              />
-              <span
-                style={{
-                  fontSize: '0.65rem',
-                  color: '#64748b',
-                  padding: '0.125rem 0.375rem',
-                  background: 'rgba(59, 130, 246, 0.1)',
-                  borderRadius: '0.25rem',
-                }}
-              >
-                Ctrl + K
-              </span>
-            </div>
-            <button style={pageStyles.headerIconButton}>
-              <Bell size={16} />
-            </button>
-            <button style={pageStyles.headerIconButton}>
-              <SettingsIcon size={16} />
-            </button>
-            <div style={pageStyles.headerAvatar}>A</div>
-            <div style={{ textAlign: 'left' }}>
-              <p
-                style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  color: 'white',
-                  margin: 0,
-                }}
-              >
-                {userName}
-              </p>
-              <p style={{ fontSize: '0.65rem', color: '#94a3b8', margin: 0 }}>
-                admin@sgi.docs
-              </p>
-            </div>
-          </div>
-        </header>
-
-        <main style={pageStyles.main}>{renderModule()}</main>
-      </div>
     </div>
   );
 }
