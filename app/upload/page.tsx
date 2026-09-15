@@ -1,7 +1,7 @@
 // app/upload/page.tsx
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Upload,
@@ -13,34 +13,111 @@ import {
   Zap,
   Shield,
   ArrowLeft,
+  AlertTriangle,
 } from 'lucide-react';
 import Sidebar from '../Sidebar';
 import { uploadDocument } from '../lib/documents';
+import { loadSettings } from '../lib/settings';
 import { pageStyles, moduleStyles } from '../styles';
 
+// ============================================================
+// Constantes
+// ============================================================
+
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+const CDN_LOAD_TIMEOUT_MS = 20000;
+const OCR_TIMEOUT_MS = 90000;
+const PDFJS_CDN =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+const PDFJS_WORKER_CDN =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const TESSERACT_CDN =
+  'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js';
+const DARK_MODE_EVENT = 'sgi:darkModeChanged';
+
+type MessageType = 'info' | 'success' | 'error' | 'warning';
+
+const MESSAGE_STYLES: Record<
+  MessageType,
+  { bg: string; border: string; color: string }
+> = {
+  info: {
+    bg: 'rgba(59, 130, 246, 0.1)',
+    border: 'rgba(59, 130, 246, 0.3)',
+    color: '#93c5fd',
+  },
+  success: {
+    bg: 'rgba(16, 185, 129, 0.1)',
+    border: 'rgba(16, 185, 129, 0.3)',
+    color: '#6ee7b7',
+  },
+  warning: {
+    bg: 'rgba(245, 158, 11, 0.1)',
+    border: 'rgba(245, 158, 11, 0.3)',
+    color: '#fcd34d',
+  },
+  error: {
+    bg: 'rgba(239, 68, 68, 0.1)',
+    border: 'rgba(239, 68, 68, 0.3)',
+    color: '#fca5a5',
+  },
+};
+
+// ============================================================
+// Utilidades de texto
+// ============================================================
+
 function normalizeSpaces(text: string): string {
-  return text.replace(/\s{2,}/g, ' ').trim();
+  // Preserva quebras de linha: colapsa espaços/tabs, mas mantém \n
+  return text
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function removeFooterKeywords(text: string): string {
   let result = text;
+
+  // Bloco 1: cabeçalho/rodapé em linha única (título, data, elaboração, etc.)
   result = result.replace(
-    /T[ÍI]TULO:\s*[^\n]*?(?=DATA\s+REVIS[ÃA]O:|ELABORA[ÇC][ÃA]O:|APROVA[ÇC][ÃA]O:|$)/gi,
+    /T[ÍI]TULO:\s*[^\n]*?(?=DATA\s+REVIS[ÃA]O:|ELABORA[ÇC][ÃA]O:|APROVA[ÇC][ÃA]O:|P[ÁA]GINA:|P[ÁA]G\.|$)/gi,
     ''
   );
   result = result.replace(
-    /DATA\s+REVIS[ÃA]O:\s*[^\n]*?(?=ELABORA[ÇC][ÃA]O:|APROVA[ÇC][ÃA]O:|P[ÁA]GINA:|$)/gi,
+    /DATA\s+REVIS[ÃA]O:\s*[^\n]*?(?=ELABORA[ÇC][ÃA]O:|APROVA[ÇC][ÃA]O:|P[ÁA]GINA:|P[ÁA]G\.|$)/gi,
     ''
   );
   result = result.replace(
-    /ELABORA[ÇC][ÃA]O:\s*[^\n]*?(?=APROVA[ÇC][ÃA]O:|P[ÁA]GINA:|$)/gi,
+    /ELABORA[ÇC][ÃA]O:\s*[^\n]*?(?=APROVA[ÇC][ÃA]O:|P[ÁA]GINA:|P[ÁA]G\.|$)/gi,
     ''
   );
-  result = result.replace(/APROVA[ÇC][ÃA]O:\s*[^\n]*?(?=P[ÁA]GINA:|$)/gi, '');
-  result = result.replace(/P[ÁA]GINA:\s*\d+\s*de\s*\d+/gi, '');
-  result = result.replace(/P[ÁA]G:\s*\d+/gi, '');
+  result = result.replace(
+    /APROVA[ÇC][ÃA]O:\s*[^\n]*?(?=P[ÁA]GINA:|P[ÁA]G\.|$)/gi,
+    ''
+  );
+
+  // Paginação em variações comuns
+  result = result.replace(/P[ÁA]GINA:\s*\d+\s*(?:de|\/)\s*\d+/gi, '');
+  result = result.replace(/P[ÁA]G\.?\s*\d+\s*(?:de|\/)\s*\d+/gi, '');
+  result = result.replace(/P[ÁA]G\.?\s*\d+/gi, '');
+  result = result.replace(/P[ÁA]GINA\s*\d+/gi, '');
+  result = result.replace(/\b\d+\s*\/\s*\d+\b/g, ''); // "5 / 20"
+
+  // Revisão / código de documento no rodapé
+  result = result.replace(/REVIS[ÃA]O:\s*\d+/gi, '');
+  result = result.replace(/REV\.?\s*\d+/gi, '');
+  result = result.replace(/C[ÓO]DIGO:\s*[^\s\n]+/gi, '');
+
+  // Marcações de cópia
   result = result.replace(/C[ÓO]PIA\s+ELETR[ÔO]NICA/gi, '');
-  result = result.replace(/\s{2,}/g, ' ');
+  result = result.replace(/C[ÓO]PIA\s+N[ÃA]O\s+CONTROLADA/gi, '');
+
+  // Limpa espaços residuais deixados pelas remoções
+  result = result.replace(/[ \t]{2,}/g, ' ');
+  result = result.replace(/[ \t]+\n/g, '\n');
+  result = result.replace(/\n{3,}/g, '\n\n');
+
   return result.trim();
 }
 
@@ -52,43 +129,317 @@ function extractTitleFromFileName(fileName: string): string {
     .trim();
 }
 
-function generateCodeFromFileName(fileName: string): string {
+function generateCodeFromFileName(fileName: string, seq: number): string {
   const base = fileName
     .replace(/\.pdf$/i, '')
     .replace(/[^a-zA-Z0-9]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
     .toUpperCase()
     .substring(0, 20);
-  return `${base}-${Date.now().toString().slice(-4)}`;
+
+  const seqPart = String(seq + 1).padStart(3, '0');
+  const randPart = Math.floor(Math.random() * 1000)
+    .toString()
+    .padStart(3, '0');
+
+  return `${base || 'DOC'}-${seqPart}${randPart}`;
+}
+
+function fileKey(file: File): string {
+  return `${file.name}::${file.size}::${file.lastModified}`;
+}
+
+// ============================================================
+// Utilidades de runtime (CDNs)
+// ============================================================
+
+function loadScriptOnce(src: string, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[src="${src}"]`
+    );
+    if (existing) {
+      resolve();
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`Timeout ao carregar: ${src}`));
+    }, timeoutMs);
+
+    script.onload = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      resolve();
+    };
+    script.onerror = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      reject(new Error(`Erro ao carregar: ${src}`));
+    };
+
+    document.head.appendChild(script);
+  });
+}
+
+async function ensurePdfJs(): Promise<any> {
+  if (!(window as any).pdfjsLib) {
+    await loadScriptOnce(PDFJS_CDN, CDN_LOAD_TIMEOUT_MS);
+  }
+  const lib = (window as any).pdfjsLib;
+  if (!lib) throw new Error('PDF.js não disponível');
+  if (lib.GlobalWorkerOptions.workerSrc !== PDFJS_WORKER_CDN) {
+    lib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN;
+  }
+  return lib;
+}
+
+async function ensureTesseract(): Promise<any> {
+  if (!(window as any).Tesseract) {
+    await loadScriptOnce(TESSERACT_CDN, CDN_LOAD_TIMEOUT_MS);
+  }
+  const t = (window as any).Tesseract;
+  if (!t) throw new Error('Tesseract.js não disponível');
+  return t;
+}
+
+// ============================================================
+// Processamento de imagem
+// ============================================================
+
+function preprocessImage(canvas: HTMLCanvasElement): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+    const val = gray < 140 ? 0 : 255;
+    data[i] = val;
+    data[i + 1] = val;
+    data[i + 2] = val;
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function shouldUseOcr(pageText: string): boolean {
+  const trimmed = pageText.trim();
+  if (trimmed.length < 10) return true;
+  // Se houver muitos caracteres não-alfanuméricos, provavelmente é lixo
+  const alnum = (trimmed.match(/[a-zA-Z0-9À-ÿ]/g) || []).length;
+  return alnum / trimmed.length < 0.3;
+}
+
+// ============================================================
+// Componente
+// ============================================================
+
+interface UploadError {
+  file: string;
+  reason: string;
 }
 
 export default function UploadPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [files, setFiles] = useState<File[]>([]);
-  const [category, setCategory] = useState('');
+  const [category, setCategory] = useState('Geral');
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState<MessageType>('info');
   const [darkMode, setDarkMode] = useState(true);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [uploadErrors, setUploadErrors] = useState<UploadError[]>([]);
 
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>(
     'portrait'
   );
   const [removeExtraSpaces, setRemoveExtraSpaces] = useState(true);
 
-  // ✅ Drag & Drop states
   const [isDragging, setIsDragging] = useState(false);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const newFiles = Array.from(e.target.files).filter((f) =>
-        f.name.toLowerCase().endsWith('.pdf')
+  // Controle de cancelamento e worker compartilhado do Tesseract
+  const cancelRef = useRef(false);
+  const tesseractWorkerRef = useRef<any>(null);
+  const tesseractLoadingRef = useRef<Promise<any> | null>(null);
+
+  // ----------------------------------------------------------
+  // Carrega darkMode e sincroniza com outras telas
+  // ----------------------------------------------------------
+  useEffect(() => {
+    let cancelled = false;
+    loadSettings()
+      .then((s) => {
+        if (!cancelled) setDarkMode(Boolean(s?.darkMode));
+      })
+      .catch(() => {
+        /* ignora */
+      });
+
+    const handleExternal = (e: Event) => {
+      const detail = (e as CustomEvent<{ darkMode?: boolean }>).detail;
+      if (typeof detail?.darkMode === 'boolean') {
+        setDarkMode(detail.darkMode);
+      }
+    };
+    window.addEventListener(DARK_MODE_EVENT, handleExternal);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(DARK_MODE_EVENT, handleExternal);
+    };
+  }, []);
+
+  // ----------------------------------------------------------
+  // Cleanup do worker Tesseract
+  // ----------------------------------------------------------
+  useEffect(() => {
+    return () => {
+      if (tesseractWorkerRef.current) {
+        try {
+          tesseractWorkerRef.current.terminate();
+        } catch {
+          /* ignora */
+        }
+        tesseractWorkerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleDarkModeChange = useCallback((value: boolean) => {
+    setDarkMode(value);
+    if (typeof window === 'undefined') return;
+    try {
+      window.dispatchEvent(
+        new CustomEvent(DARK_MODE_EVENT, { detail: { darkMode: value } })
       );
-      setFiles((prev) => [...prev, ...newFiles]);
+      // Persistência best-effort (não quebra se saveSettings não existir)
+      import('../lib/settings')
+        .then((mod) => {
+          const save = (
+            mod as {
+              saveSettings?: (s: { darkMode: boolean }) => Promise<void>;
+            }
+          ).saveSettings;
+          if (typeof save === 'function') {
+            save({ darkMode: value }).catch(() => {
+              /* ignora */
+            });
+          }
+        })
+        .catch(() => {
+          /* ignora */
+        });
+    } catch {
+      /* ignora */
     }
+  }, []);
+
+  // ----------------------------------------------------------
+  // Worker Tesseract reutilizável
+  // ----------------------------------------------------------
+  const getTesseractWorker = useCallback(async (): Promise<any> => {
+    if (tesseractWorkerRef.current) return tesseractWorkerRef.current;
+    if (tesseractLoadingRef.current) return tesseractLoadingRef.current;
+
+    tesseractLoadingRef.current = (async () => {
+      const Tesseract = await ensureTesseract();
+      const worker = await Tesseract.createWorker('por+eng');
+      try {
+        await worker.setParameters({
+          tessedit_pageseg_mode: '6',
+        });
+      } catch {
+        /* ignora se o parâmetro não for aceito */
+      }
+      tesseractWorkerRef.current = worker;
+      return worker;
+    })();
+
+    try {
+      return await tesseractLoadingRef.current;
+    } finally {
+      tesseractLoadingRef.current = null;
+    }
+  }, []);
+
+  // ----------------------------------------------------------
+  // Seleção de arquivos
+  // ----------------------------------------------------------
+  const addFiles = useCallback(
+    (incoming: File[], showMessage = true) => {
+      if (incoming.length === 0) return;
+
+      const tooBig: string[] = [];
+      const notPdf: string[] = [];
+      const valid: File[] = [];
+
+      for (const f of incoming) {
+        if (!f.name.toLowerCase().endsWith('.pdf')) {
+          notPdf.push(f.name);
+          continue;
+        }
+        if (f.size > MAX_FILE_SIZE_BYTES) {
+          tooBig.push(f.name);
+          continue;
+        }
+        valid.push(f);
+      }
+
+      setFiles((prev) => {
+        const existing = new Set(prev.map(fileKey));
+        const deduped: File[] = [];
+        for (const f of valid) {
+          const k = fileKey(f);
+          if (existing.has(k)) continue;
+          existing.add(k);
+          deduped.push(f);
+        }
+        return [...prev, ...deduped];
+      });
+
+      if (showMessage) {
+        const problems: string[] = [];
+        if (notPdf.length)
+          problems.push(`${notPdf.length} arquivo(s) não-PDF ignorado(s)`);
+        if (tooBig.length)
+          problems.push(
+            `${tooBig.length} arquivo(s) acima de 50 MB ignorado(s)`
+          );
+        if (problems.length > 0) {
+          setMessage(`⚠️ ${problems.join('. ')}.`);
+          setMessageType('warning');
+        } else if (valid.length > 0) {
+          setMessage(`✅ ${valid.length} arquivo(s) adicionado(s).`);
+          setMessageType('success');
+        }
+      }
+    },
+    []
+  );
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    if (input.files) {
+      addFiles(Array.from(input.files));
+    }
+    // Permite reselecionar o mesmo arquivo
+    input.value = '';
   };
 
-  // ✅ Drag & Drop handlers
+  // ----------------------------------------------------------
+  // Drag & Drop
+  // ----------------------------------------------------------
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -98,7 +449,6 @@ export default function UploadPage() {
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // Só desativa se sair completamente da área
     if (e.currentTarget.contains(e.relatedTarget as Node)) return;
     setIsDragging(false);
   };
@@ -112,143 +462,200 @@ export default function UploadPage() {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-
-    const droppedFiles = Array.from(e.dataTransfer.files);
-    const pdfFiles = droppedFiles.filter((f) =>
-      f.name.toLowerCase().endsWith('.pdf')
-    );
-
-    if (pdfFiles.length === 0) {
-      setMessage('⚠️ Apenas arquivos PDF são aceitos.');
-      return;
-    }
-
-    setFiles((prev) => [...prev, ...pdfFiles]);
-    setMessage(`✅ ${pdfFiles.length} arquivo(s) adicionado(s).`);
+    const dropped = Array.from(e.dataTransfer.files);
+    addFiles(dropped);
   };
 
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
+  const removeFile = (key: string) => {
+    setFiles((prev) => prev.filter((f) => fileKey(f) !== key));
+    setMessage('');
+    setUploadErrors([]);
   };
 
-  function preprocessImage(canvas: HTMLCanvasElement): HTMLCanvasElement {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return canvas;
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-      const val = gray < 140 ? 0 : 255;
-      data[i] = val;
-      data[i + 1] = val;
-      data[i + 2] = val;
+  const handleDropzoneKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (!uploading) fileInputRef.current?.click();
     }
-    ctx.putImageData(imageData, 0, 0);
-    return canvas;
-  }
+  };
 
-  const extractPDFText = async (file: File): Promise<string> => {
-    if (!(window as any).pdfjsLib) {
-      await new Promise<void>((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src =
-          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error('Erro ao carregar PDF.js'));
-        document.head.appendChild(script);
-      });
-    }
+  // ----------------------------------------------------------
+  // Extração de texto de um PDF
+  // ----------------------------------------------------------
+  const extractPDFText = useCallback(
+    async (file: File, seq: number): Promise<string> => {
+      const pdfjsLib = await ensurePdfJs();
 
-    const pdfjsLib = (window as any).pdfjsLib;
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
 
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let fullText = '';
+      let pdf: any;
+      try {
+        pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+      } catch (err: any) {
+        if (err?.name === 'PasswordException') {
+          throw new Error('PDF protegido por senha');
+        }
+        if (err?.name === 'InvalidPDFException') {
+          throw new Error('Arquivo PDF inválido ou corrompido');
+        }
+        throw err;
+      }
 
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items.map((item: any) => item.str).join(' ');
+      const parts: string[] = [];
 
-      if (pageText.trim().length < 10) {
-        const viewport = page.getViewport({ scale: 3 });
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        if (cancelRef.current) break;
+
+        const page = await pdf.getPage(pageNum);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items
+          .map((item: any) => (typeof item.str === 'string' ? item.str : ''))
+          .join(' ');
+
+        if (!shouldUseOcr(pageText)) {
+          parts.push(pageText);
+          continue;
+        }
+
+        // Renderiza em canvas para OCR
+        const scale = 2;
+        const viewport = page.getViewport({ scale });
         const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const context = canvas.getContext('2d');
-        await page.render({ canvasContext: context, viewport }).promise;
-        const processedCanvas = preprocessImage(canvas);
-        const imageData = processedCanvas.toDataURL('image/png');
+        canvas.width = Math.max(1, Math.floor(viewport.width));
+        canvas.height = Math.max(1, Math.floor(viewport.height));
+        const ctx = canvas.getContext('2d');
+
+        if (!ctx) {
+          // Sem contexto 2D: usa o que tiver de texto nativo
+          parts.push(pageText);
+          continue;
+        }
 
         try {
-          if (!(window as any).Tesseract) {
-            await new Promise<void>((resolve, reject) => {
-              const script = document.createElement('script');
-              script.src =
-                'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js';
-              script.onload = () => resolve();
-              script.onerror = () =>
-                reject(new Error('Erro ao carregar Tesseract.js'));
-              document.head.appendChild(script);
-            });
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          preprocessImage(canvas);
+          const imageDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+          // Libera memória do canvas antes do OCR
+          canvas.width = 0;
+          canvas.height = 0;
+
+          const worker = await getTesseractWorker();
+
+          const ocrPromise = worker.recognize(imageDataUrl);
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            window.setTimeout(
+              () => reject(new Error('Tempo esgotado no OCR')),
+              OCR_TIMEOUT_MS
+            );
+          });
+
+          let ocrText = '';
+          try {
+            const result: any = await Promise.race([
+              ocrPromise,
+              timeoutPromise,
+            ]);
+            ocrText = result?.data?.text ?? '';
+          } catch (err: any) {
+            // Se o worker travou, descarta para recriar na próxima
+            if (String(err?.message || '').includes('Tempo esgotado')) {
+              if (tesseractWorkerRef.current) {
+                try {
+                  tesseractWorkerRef.current.terminate();
+                } catch {
+                  /* ignora */
+                }
+                tesseractWorkerRef.current = null;
+              }
+            }
+            parts.push(pageText);
+            continue;
           }
 
-          const Tesseract = (window as any).Tesseract;
-          const result = await Tesseract.recognize(imageData, 'por+eng', {
-            tessedit_psm: 6,
-            timeout: 60000,
-          });
-          fullText += result.data.text + '\n';
+          parts.push(ocrText.length > 0 ? ocrText : pageText);
         } catch {
-          fullText += pageText + '\n';
+          // Falha no render/OCR: cai para o texto nativo da página
+          parts.push(pageText);
+        } finally {
+          // Garante liberação mesmo em exceção
+          if (canvas.width !== 0 || canvas.height !== 0) {
+            canvas.width = 0;
+            canvas.height = 0;
+          }
         }
-      } else {
-        fullText += pageText + '\n';
       }
-    }
-    return fullText;
-  };
 
+      try {
+        if (typeof pdf.destroy === 'function') await pdf.destroy();
+      } catch {
+        /* ignora */
+      }
+
+      void seq; // reservado para uso futuro (não altera assinatura)
+      return parts.join('\n');
+    },
+    [getTesseractWorker]
+  );
+
+  // ----------------------------------------------------------
+  // Upload
+  // ----------------------------------------------------------
   const handleUpload = async () => {
+    if (uploading) return;
     if (files.length === 0) {
-      setMessage('Selecione pelo menos um arquivo');
+      setMessage('Selecione pelo menos um arquivo PDF.');
+      setMessageType('warning');
       return;
     }
 
+    cancelRef.current = false;
     setUploading(true);
     setMessage('');
+    setUploadErrors([]);
     setProgress({ current: 0, total: files.length });
 
+    const errors: UploadError[] = [];
     let successCount = 0;
     let errorCount = 0;
 
     for (let i = 0; i < files.length; i++) {
+      if (cancelRef.current) break;
+
       const file = files[i];
-      setProgress({ current: i + 1, total: files.length });
-      setMessage(`Processando ${i + 1} de ${files.length}: ${file.name}`);
+      setMessage(
+        `Processando ${i + 1} de ${files.length}: ${file.name}`
+      );
+      setMessageType('info');
 
       try {
-        const content = await extractPDFText(file);
-        let finalContent = content;
+        const content = await extractPDFText(file, i);
+
+        // Ordem correta: removeFooterKeywords ANTES de normalizeSpaces,
+        // pois os regex de footer dependem de \n.
+        let finalContent = removeFooterKeywords(content);
 
         if (removeExtraSpaces) {
           finalContent = normalizeSpaces(finalContent);
         }
 
-        finalContent = removeFooterKeywords(finalContent);
-
-        if (finalContent.length < 10) {
-          finalContent = content;
+        // Se o processamento destruiu o texto, volta ao original
+        if (finalContent.length < 10 && content.length >= 10) {
+          finalContent = removeExtraSpaces ? normalizeSpaces(content) : content;
         }
 
-        if (!finalContent || finalContent.length < 5) {
+        if (!finalContent || finalContent.trim().length < 5) {
           errorCount++;
+          errors.push({
+            file: file.name,
+            reason: 'Não foi possível extrair texto legível',
+          });
+          setProgress({ current: i + 1, total: files.length });
           continue;
         }
 
-        const autoCode = generateCodeFromFileName(file.name);
+        const autoCode = generateCodeFromFileName(file.name, i);
         const autoTitle = extractTitleFromFileName(file.name);
 
         await uploadDocument(file, {
@@ -261,21 +668,56 @@ export default function UploadPage() {
 
         successCount++;
       } catch (error) {
+        const reason =
+          error instanceof Error ? error.message : String(error);
         console.error(`Erro no arquivo ${file.name}:`, error);
+        errors.push({ file: file.name, reason });
         errorCount++;
+      } finally {
+        setProgress({ current: i + 1, total: files.length });
       }
     }
 
     setUploading(false);
-    setMessage(
-      `✅ Concluído! ${successCount} enviado(s), ${errorCount} erro(s).`
-    );
+    setUploadErrors(errors);
 
-    setTimeout(() => {
-      if (successCount > 0) router.push('/');
-    }, 2500);
+    if (cancelRef.current) {
+      setMessage(
+        `⏹️ Cancelado. ${successCount} enviado(s), ${errorCount} com erro.`
+      );
+      setMessageType('warning');
+      return;
+    }
+
+    if (errorCount === 0) {
+      setMessage(`✅ Concluído! ${successCount} documento(s) enviado(s).`);
+      setMessageType('success');
+    } else if (successCount === 0) {
+      setMessage(`❌ Falha ao enviar. ${errorCount} arquivo(s) com erro.`);
+      setMessageType('error');
+    } else {
+      setMessage(
+        `⚠️ Concluído com avisos: ${successCount} enviado(s), ${errorCount} com erro.`
+      );
+      setMessageType('warning');
+    }
+
+    if (successCount > 0) {
+      window.setTimeout(() => {
+        if (!cancelRef.current) router.push('/');
+      }, 2500);
+    }
   };
 
+  const handleCancel = () => {
+    cancelRef.current = true;
+    setMessage('Cancelando... aguarde o processamento atual terminar.');
+    setMessageType('warning');
+  };
+
+  // ----------------------------------------------------------
+  // Navegação pelo Sidebar
+  // ----------------------------------------------------------
   const handleModuleChange = (module: string) => {
     if (module === 'dashboard') router.push('/');
     else if (module === 'documentos') router.push('/');
@@ -283,7 +725,11 @@ export default function UploadPage() {
   };
 
   const progressPercent =
-    progress.total > 0 ? (progress.current / progress.total) * 100 : 0;
+    progress.total > 0
+      ? Math.min(100, (progress.current / progress.total) * 100)
+      : 0;
+
+  const messageStyle = MESSAGE_STYLES[messageType];
 
   return (
     <div style={pageStyles.container}>
@@ -291,7 +737,7 @@ export default function UploadPage() {
         activeModule="upload"
         onModuleChange={handleModuleChange}
         darkMode={darkMode}
-        setDarkMode={setDarkMode}
+        setDarkMode={handleDarkModeChange}
       />
 
       <div style={pageStyles.mainContent}>
@@ -304,6 +750,7 @@ export default function UploadPage() {
             </p>
           </div>
           <button
+            type="button"
             onClick={() => router.push('/')}
             style={{
               display: 'flex',
@@ -347,6 +794,7 @@ export default function UploadPage() {
                 {/* Categoria */}
                 <div>
                   <label
+                    htmlFor="upload-category"
                     style={{
                       display: 'block',
                       fontSize: '0.75rem',
@@ -358,9 +806,11 @@ export default function UploadPage() {
                     Categoria
                   </label>
                   <select
+                    id="upload-category"
                     data-theme="dark"
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
+                    disabled={uploading}
                     style={{
                       width: '100%',
                       padding: '0.75rem 1rem',
@@ -376,9 +826,10 @@ export default function UploadPage() {
                       backgroundRepeat: 'no-repeat',
                       backgroundPosition: 'right 0.75rem center',
                       backgroundSize: '1rem',
+                      opacity: uploading ? 0.6 : 1,
                     }}
                   >
-                    <option value="">Geral</option>
+                    <option value="Geral">Geral</option>
                     <option value="Segurança da Informação">
                       Segurança da Informação
                     </option>
@@ -413,7 +864,7 @@ export default function UploadPage() {
                   </h3>
 
                   <div>
-                    <label
+                    <span
                       style={{
                         display: 'block',
                         fontSize: '0.7rem',
@@ -423,11 +874,13 @@ export default function UploadPage() {
                       }}
                     >
                       Orientação do documento
-                    </label>
+                    </span>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button
                         type="button"
                         onClick={() => setOrientation('portrait')}
+                        disabled={uploading}
+                        aria-pressed={orientation === 'portrait'}
                         style={{
                           flex: 1,
                           padding: '0.625rem',
@@ -445,7 +898,8 @@ export default function UploadPage() {
                               : 'rgba(15, 30, 58, 0.4)',
                           color:
                             orientation === 'portrait' ? '#60a5fa' : '#94a3b8',
-                          cursor: 'pointer',
+                          cursor: uploading ? 'not-allowed' : 'pointer',
+                          opacity: uploading ? 0.6 : 1,
                         }}
                       >
                         📄 Retrato
@@ -453,6 +907,8 @@ export default function UploadPage() {
                       <button
                         type="button"
                         onClick={() => setOrientation('landscape')}
+                        disabled={uploading}
+                        aria-pressed={orientation === 'landscape'}
                         style={{
                           flex: 1,
                           padding: '0.625rem',
@@ -472,7 +928,8 @@ export default function UploadPage() {
                             orientation === 'landscape'
                               ? '#60a5fa'
                               : '#94a3b8',
-                          cursor: 'pointer',
+                          cursor: uploading ? 'not-allowed' : 'pointer',
+                          opacity: uploading ? 0.6 : 1,
                         }}
                       >
                         📐 Paisagem
@@ -485,7 +942,7 @@ export default function UploadPage() {
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.5rem',
-                      cursor: 'pointer',
+                      cursor: uploading ? 'not-allowed' : 'pointer',
                       fontSize: '0.75rem',
                       color: '#cbd5e1',
                       fontWeight: 500,
@@ -495,15 +952,17 @@ export default function UploadPage() {
                       data-theme="dark"
                       type="checkbox"
                       checked={removeExtraSpaces}
+                      disabled={uploading}
                       onChange={(e) => setRemoveExtraSpaces(e.target.checked)}
                     />
                     Excluir espaços em branco extras
                   </label>
                 </div>
 
-                {/* ✅ Upload com Drag & Drop */}
+                {/* Dropzone */}
                 <div>
                   <label
+                    htmlFor="pdf-input"
                     style={{
                       display: 'block',
                       fontSize: '0.75rem',
@@ -515,11 +974,18 @@ export default function UploadPage() {
                     Arquivos PDF *
                   </label>
                   <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Selecionar arquivos PDF"
+                    aria-disabled={uploading}
+                    onKeyDown={handleDropzoneKeyDown}
                     onDragEnter={handleDragEnter}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => {
+                      if (!uploading) fileInputRef.current?.click();
+                    }}
                     style={{
                       border: `2px dashed ${
                         isDragging
@@ -533,16 +999,20 @@ export default function UploadPage() {
                         ? 'rgba(59, 130, 246, 0.15)'
                         : 'rgba(30, 58, 95, 0.2)',
                       transition: 'all 0.2s',
-                      cursor: 'pointer',
+                      cursor: uploading ? 'not-allowed' : 'pointer',
                       transform: isDragging ? 'scale(1.02)' : 'scale(1)',
+                      opacity: uploading ? 0.6 : 1,
                     }}
                   >
                     <input
+                      id="pdf-input"
                       ref={fileInputRef}
                       type="file"
                       accept="application/pdf"
                       multiple
                       onChange={handleFileSelect}
+                      disabled={uploading}
+                      aria-label="Selecionar arquivos PDF"
                       style={{ display: 'none' }}
                     />
                     <div
@@ -584,9 +1054,10 @@ export default function UploadPage() {
                     </p>
                     <button
                       type="button"
+                      disabled={uploading}
                       onClick={(e) => {
                         e.stopPropagation();
-                        fileInputRef.current?.click();
+                        if (!uploading) fileInputRef.current?.click();
                       }}
                       style={{
                         background:
@@ -597,11 +1068,12 @@ export default function UploadPage() {
                         fontSize: '0.8rem',
                         fontWeight: 600,
                         border: 'none',
-                        cursor: 'pointer',
+                        cursor: uploading ? 'not-allowed' : 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '0.5rem',
                         boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+                        opacity: uploading ? 0.6 : 1,
                       }}
                     >
                       <Upload size={14} />
@@ -638,72 +1110,80 @@ export default function UploadPage() {
                         gap: '0.5rem',
                       }}
                     >
-                      {files.map((file, index) => (
-                        <div
-                          key={index}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.75rem',
-                            background: 'rgba(30, 58, 95, 0.3)',
-                            padding: '0.75rem',
-                            borderRadius: '0.75rem',
-                            border: '1px solid rgba(59, 130, 246, 0.15)',
-                          }}
-                        >
+                      {files.map((file) => {
+                        const k = fileKey(file);
+                        return (
                           <div
+                            key={k}
                             style={{
-                              width: '2.25rem',
-                              height: '2.25rem',
-                              background:
-                                'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                              borderRadius: '0.5rem',
                               display: 'flex',
                               alignItems: 'center',
-                              justifyContent: 'center',
-                              flexShrink: 0,
+                              gap: '0.75rem',
+                              background: 'rgba(30, 58, 95, 0.3)',
+                              padding: '0.75rem',
+                              borderRadius: '0.75rem',
+                              border: '1px solid rgba(59, 130, 246, 0.15)',
+                              opacity: uploading ? 0.6 : 1,
                             }}
                           >
-                            <FileText size={16} color="white" />
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <p
+                            <div
                               style={{
-                                fontSize: '0.75rem',
-                                color: 'white',
-                                margin: 0,
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
+                                width: '2.25rem',
+                                height: '2.25rem',
+                                background:
+                                  'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                                borderRadius: '0.5rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
                               }}
                             >
-                              {file.name}
-                            </p>
-                            <p
+                              <FileText size={16} color="white" />
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p
+                                style={{
+                                  fontSize: '0.75rem',
+                                  color: 'white',
+                                  margin: 0,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {file.name}
+                              </p>
+                              <p
+                                style={{
+                                  fontSize: '0.65rem',
+                                  color: '#94a3b8',
+                                  margin: '0.125rem 0 0',
+                                }}
+                              >
+                                {(file.size / 1024).toFixed(1)} KB
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeFile(k)}
+                              disabled={uploading}
+                              aria-label={`Remover ${file.name}`}
+                              title="Remover"
                               style={{
-                                fontSize: '0.65rem',
-                                color: '#94a3b8',
-                                margin: '0.125rem 0 0',
+                                color: '#64748b',
+                                background: 'none',
+                                border: 'none',
+                                cursor: uploading ? 'not-allowed' : 'pointer',
+                                padding: '0.25rem',
+                                opacity: uploading ? 0.5 : 1,
                               }}
                             >
-                              {(file.size / 1024).toFixed(1)} KB
-                            </p>
+                              <X size={14} />
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => removeFile(index)}
-                            style={{
-                              color: '#64748b',
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              padding: '0.25rem',
-                            }}
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -746,64 +1226,135 @@ export default function UploadPage() {
                   </div>
                 )}
 
-                {/* Botão de enviar */}
-                <button
-                  onClick={handleUpload}
-                  disabled={uploading || files.length === 0}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.5rem',
-                    background:
-                      uploading || files.length === 0
-                        ? 'rgba(37, 99, 235, 0.4)'
-                        : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                    color: 'white',
-                    padding: '0.875rem',
-                    borderRadius: '0.75rem',
-                    fontWeight: 600,
-                    fontSize: '0.875rem',
-                    border: 'none',
-                    cursor:
-                      uploading || files.length === 0
-                        ? 'not-allowed'
-                        : 'pointer',
-                    boxShadow:
-                      uploading || files.length === 0
-                        ? 'none'
-                        : '0 4px 16px rgba(37, 99, 235, 0.4)',
-                  }}
-                >
-                  {uploading ? (
-                    <>
-                      <Loader2
-                        size={16}
-                        style={{ animation: 'spin 1s linear infinite' }}
-                      />
-                      Processando...
-                    </>
-                  ) : (
-                    <>
-                      <Save size={16} />
-                      Enviar {files.length > 0 ? `(${files.length})` : ''}
-                    </>
-                  )}
-                </button>
+                {/* Botão de enviar / cancelar */}
+                {!uploading ? (
+                  <button
+                    type="button"
+                    onClick={handleUpload}
+                    disabled={files.length === 0}
+                    title={
+                      files.length === 0
+                        ? 'Selecione pelo menos um arquivo PDF'
+                        : 'Enviar documentos'
+                    }
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      background:
+                        files.length === 0
+                          ? 'rgba(37, 99, 235, 0.4)'
+                          : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                      color: 'white',
+                      padding: '0.875rem',
+                      borderRadius: '0.75rem',
+                      fontWeight: 600,
+                      fontSize: '0.875rem',
+                      border: 'none',
+                      cursor:
+                        files.length === 0 ? 'not-allowed' : 'pointer',
+                      boxShadow:
+                        files.length === 0
+                          ? 'none'
+                          : '0 4px 16px rgba(37, 99, 235, 0.4)',
+                    }}
+                  >
+                    <Save size={16} />
+                    Enviar {files.length > 0 ? `(${files.length})` : ''}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      color: '#fca5a5',
+                      padding: '0.875rem',
+                      borderRadius: '0.75rem',
+                      fontWeight: 600,
+                      fontSize: '0.875rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Loader2
+                      size={16}
+                      style={{ animation: 'spin 1s linear infinite' }}
+                    />
+                    Cancelar processamento
+                  </button>
+                )}
 
+                {/* Mensagem */}
                 {message && (
                   <div
+                    role="status"
+                    aria-live="polite"
                     style={{
                       padding: '0.75rem 1rem',
-                      background: 'rgba(59, 130, 246, 0.1)',
-                      border: '1px solid rgba(59, 130, 246, 0.3)',
-                      color: '#93c5fd',
+                      background: messageStyle.bg,
+                      border: `1px solid ${messageStyle.border}`,
+                      color: messageStyle.color,
                       borderRadius: '0.5rem',
                       fontSize: '0.8rem',
                     }}
                   >
                     {message}
+                  </div>
+                )}
+
+                {/* Erros detalhados */}
+                {uploadErrors.length > 0 && (
+                  <div
+                    style={{
+                      padding: '0.75rem 1rem',
+                      background: 'rgba(239, 68, 68, 0.05)',
+                      border: '1px solid rgba(239, 68, 68, 0.25)',
+                      borderRadius: '0.5rem',
+                    }}
+                  >
+                    <p
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        margin: 0,
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        color: '#fca5a5',
+                      }}
+                    >
+                      <AlertTriangle size={14} />
+                      {uploadErrors.length} arquivo(s) com erro
+                    </p>
+                    <ul
+                      style={{
+                        margin: '0.5rem 0 0',
+                        padding: 0,
+                        listStyle: 'none',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.25rem',
+                        fontSize: '0.7rem',
+                        color: '#cbd5e1',
+                      }}
+                    >
+                      {uploadErrors.map((e, i) => (
+                        <li key={`${e.file}-${i}`}>
+                          <strong style={{ color: '#fca5a5' }}>
+                            {e.file}
+                          </strong>
+                          : {e.reason}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </div>
@@ -839,10 +1390,26 @@ export default function UploadPage() {
                   }}
                 >
                   {[
-                    { n: 1, t: 'Selecione os arquivos', d: 'Arraste ou clique para escolher vários PDFs' },
-                    { n: 2, t: 'Extração automática', d: 'O OCR extrai o texto de cada um' },
-                    { n: 3, t: 'Título e código automáticos', d: 'Gerados a partir do nome do arquivo' },
-                    { n: 4, t: 'Disponível para busca', d: 'Encontre informações em segundos' },
+                    {
+                      n: 1,
+                      t: 'Selecione os arquivos',
+                      d: 'Arraste ou clique para escolher vários PDFs',
+                    },
+                    {
+                      n: 2,
+                      t: 'Extração automática',
+                      d: 'O OCR extrai o texto de cada um',
+                    },
+                    {
+                      n: 3,
+                      t: 'Título e código automáticos',
+                      d: 'Gerados a partir do nome do arquivo',
+                    },
+                    {
+                      n: 4,
+                      t: 'Disponível para busca',
+                      d: 'Encontre informações em segundos',
+                    },
                   ].map((item) => (
                     <div
                       key={item.n}
@@ -936,6 +1503,7 @@ export default function UploadPage() {
                   <li>• Evite PDFs protegidos por senha</li>
                   <li>• O OCR suporta português e inglês</li>
                   <li>• Arraste vários arquivos de uma vez para agilizar</li>
+                  <li>• O primeiro arquivo pode demorar mais (download do OCR)</li>
                 </ul>
               </div>
 
@@ -950,9 +1518,9 @@ export default function UploadPage() {
                   { icon: CheckCircle2, label: 'OCR Inteligente' },
                   { icon: Zap, label: 'Busca Avançada' },
                   { icon: Shield, label: 'Seguro & Privado' },
-                ].map((item, i) => (
+                ].map((item) => (
                   <div
-                    key={i}
+                    key={item.label}
                     style={{
                       display: 'flex',
                       flexDirection: 'column',
