@@ -9,6 +9,8 @@ import {
   ChevronDown,
   ChevronUp,
   Ban,
+  Minus,
+  Plus,
 } from 'lucide-react';
 import { searchDocuments } from './lib/documents';
 import type { DocumentData } from './lib/supabase';
@@ -19,6 +21,9 @@ import { buscarModuleStyles } from './styles';
 // ============================================================
 const CHARS_PER_PAGE_ESTIMATE = 3000;
 const SNIPPET_CONTEXT_CHARS = 150;
+
+/** ✅ Range padrão (caracteres antes/depois do termo excluído) */
+const DEFAULT_EXCLUDE_RANGE = 200;
 
 const SEARCHABLE_FIELDS = [
   'title',
@@ -34,25 +39,14 @@ type SearchableField = (typeof SEARCHABLE_FIELDS)[number];
 // Normalização
 // ============================================================
 
-/**
- * Normaliza um texto para comparação:
- *  - NFD: decompõe caracteres acentuados
- *  - remove marcas combinantes (\u0300–\u036f)
- *  - toLowerCase
- *  - ✅ REMOVE espaços, hífens, pontos, etc. (para busca flexível)
- */
 function normalizeForSearch(text: string): string {
   return text
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/[\s\-_.:;,()\[\]{}!?@#$%^&*+=~`<>|\\/\"']/g, ''); // ✅ remove símbolos
+    .replace(/[\s\-_.:;,()\[\]{}!?@#$%^&*+=~`<>|\\/\"']/g, '');
 }
 
-/**
- * Constrói a versão normalizada do texto + mapas de início/fim (em code units)
- * para cada caractere normalizado.
- */
 function normalizeWithMap(text: string): {
   normalized: string;
   starts: number[];
@@ -77,20 +71,68 @@ function normalizeWithMap(text: string): {
 }
 
 // ============================================================
-// ✅ Remove palavras/termos a excluir do texto
+// ✅ Exclusão com RANGE de caracteres
 // ============================================================
-function removeExcludedTerms(text: string, excludeTerms: string[]): string {
+
+/**
+ * Remove trechos que contêm um termo, incluindo N caracteres ao redor dele.
+ * Exemplo: se excluir "ELABORAÇÃO" com range=200, remove
+ * 200 caracteres ANTES + "ELABORAÇÃO" + 200 caracteres DEPOIS.
+ */
+function removeExcludedTermsWithRange(
+  text: string,
+  excludeTerms: string[],
+  range: number
+): string {
   if (excludeTerms.length === 0) return text;
 
-  let result = text;
+  const lowerText = text.toLowerCase();
+  // Marca quais índices devem ser removidos
+  const toRemove = new Array(text.length).fill(false);
+
   for (const term of excludeTerms) {
     if (!term) continue;
-    // Cria regex case-insensitive para remover o termo (com espaços flexíveis)
-    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(escaped, 'gi');
-    result = result.replace(regex, ' ');
+
+    const lowerTerm = term.toLowerCase();
+    let searchFrom = 0;
+
+    while (true) {
+      const index = lowerText.indexOf(lowerTerm, searchFrom);
+      if (index === -1) break;
+
+      // Calcula o range a remover
+      const start = Math.max(0, index - range);
+      const end = Math.min(text.length, index + term.length + range);
+
+      // Marca o range para remoção
+      for (let i = start; i < end; i++) {
+        toRemove[i] = true;
+      }
+
+      searchFrom = index + term.length;
+    }
   }
-  return result.replace(/\s{2,}/g, ' ');
+
+  // Constrói o texto final removendo os índices marcados
+  let result = '';
+  let i = 0;
+  while (i < text.length) {
+    if (toRemove[i]) {
+      // Substitui por um espaço (preserva quebras de linha)
+      if (text[i] === '\n') {
+        result += '\n';
+      } else {
+        result += ' ';
+      }
+      i++;
+    } else {
+      result += text[i];
+      i++;
+    }
+  }
+
+  // Limpa espaços múltiplos
+  return result.replace(/[ \t]{2,}/g, ' ');
 }
 
 // ============================================================
@@ -223,13 +265,14 @@ export default function BuscarDocumentosModule() {
   const [searchTerm, setSearchTerm] = useState('');
   const [category, setCategory] = useState('Todas');
   const [dateFilter, setDateFilter] = useState('');
-  const [excludeTerms, setExcludeTerms] = useState(''); // ✅ NOVO
+  const [excludeTerms, setExcludeTerms] = useState('');
+  const [excludeRange, setExcludeRange] = useState(DEFAULT_EXCLUDE_RANGE); // ✅ NOVO
   const [groupedResults, setGroupedResults] = useState<GroupedResult[]>([]);
   const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
-  const [showExclude, setShowExclude] = useState(false); // ✅ NOVO
+  const [showExclude, setShowExclude] = useState(false);
 
   const requestIdRef = useRef(0);
 
@@ -238,7 +281,6 @@ export default function BuscarDocumentosModule() {
     [groupedResults]
   );
 
-  // ✅ Processa os termos a excluir
   const parsedExcludeTerms = useMemo(() => {
     return excludeTerms
       .split(',')
@@ -285,8 +327,12 @@ export default function BuscarDocumentosModule() {
         const occurrences: Occurrence[] = [];
 
         for (const { field, value } of fields) {
-          // ✅ Remove os termos a excluir ANTES de buscar
-          const cleanedValue = removeExcludedTerms(value, parsedExcludeTerms);
+          // ✅ Remove trechos com range ao redor do termo excluído
+          const cleanedValue = removeExcludedTermsWithRange(
+            value,
+            parsedExcludeTerms,
+            excludeRange
+          );
 
           occurrences.push(
             ...buildOccurrences(field, cleanedValue, needleNormalized)
@@ -306,7 +352,7 @@ export default function BuscarDocumentosModule() {
           setError('Nenhum documento corresponde aos filtros selecionados.');
         } else {
           setError(
-            'Documentos foram encontrados, mas o termo exato não pôde ser localizado nos campos pesquisáveis.'
+            'Documentos foram encontrados, mas o termo exato não pôde ser localizado após a exclusão dos termos.'
           );
         }
       }
@@ -402,7 +448,6 @@ export default function BuscarDocumentosModule() {
           style={buscarModuleStyles.dateInput}
         />
 
-        {/* ✅ Botão para mostrar/ocultar campo de exclusão */}
         <button
           type="button"
           onClick={() => setShowExclude(!showExclude)}
@@ -452,7 +497,7 @@ export default function BuscarDocumentosModule() {
         </button>
       </div>
 
-      {/* ✅ Campo de termos a excluir */}
+      {/* ✅ Painel de exclusão */}
       {showExclude && (
         <div
           style={{
@@ -472,7 +517,7 @@ export default function BuscarDocumentosModule() {
               marginBottom: '0.5rem',
             }}
           >
-            Digite os termos a serem excluídos (separados por vírgula)
+            🚫 Termos a serem excluídos (separados por vírgula)
           </label>
           <input
             type="text"
@@ -490,13 +535,119 @@ export default function BuscarDocumentosModule() {
               outline: 'none',
             }}
           />
+
+          {/* ✅ Range de exclusão */}
+          <div style={{ marginTop: '0.75rem' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '0.7rem',
+                fontWeight: 600,
+                color: '#fca5a5',
+                marginBottom: '0.5rem',
+              }}
+            >
+              📏 Range de exclusão (caracteres ao redor do termo)
+            </label>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  setExcludeRange(Math.max(0, excludeRange - 50))
+                }
+                style={{
+                  width: '2.25rem',
+                  height: '2.25rem',
+                  borderRadius: '0.5rem',
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border-input)',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Minus size={14} />
+              </button>
+
+              <input
+                type="range"
+                min="0"
+                max="1000"
+                step="50"
+                value={excludeRange}
+                onChange={(e) =>
+                  setExcludeRange(parseInt(e.target.value))
+                }
+                style={{
+                  flex: 1,
+                  accentColor: '#ef4444',
+                  cursor: 'pointer',
+                }}
+              />
+
+              <button
+                type="button"
+                onClick={() =>
+                  setExcludeRange(Math.min(1000, excludeRange + 50))
+                }
+                style={{
+                  width: '2.25rem',
+                  height: '2.25rem',
+                  borderRadius: '0.5rem',
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border-input)',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Plus size={14} />
+              </button>
+
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  color: '#fca5a5',
+                  minWidth: '70px',
+                  textAlign: 'right',
+                }}
+              >
+                {excludeRange} chars
+              </span>
+            </div>
+            <p
+              style={{
+                fontSize: '0.65rem',
+                color: 'var(--text-dim)',
+                margin: '0.5rem 0 0',
+                lineHeight: 1.5,
+              }}
+            >
+              💡 Remove <strong>{excludeRange} caracteres ANTES</strong> e{' '}
+              <strong>{excludeRange} caracteres DEPOIS</strong> de cada termo
+              excluído. Aumente o range para remover blocos maiores (como
+              rodapés inteiros).
+            </p>
+          </div>
+
           {parsedExcludeTerms.length > 0 && (
             <div
               style={{
                 display: 'flex',
                 flexWrap: 'wrap',
                 gap: '0.375rem',
-                marginTop: '0.5rem',
+                marginTop: '0.75rem',
               }}
             >
               {parsedExcludeTerms.map((term, i) => (
@@ -516,17 +667,6 @@ export default function BuscarDocumentosModule() {
               ))}
             </div>
           )}
-          <p
-            style={{
-              fontSize: '0.65rem',
-              color: 'var(--text-dim)',
-              margin: '0.5rem 0 0',
-              lineHeight: 1.5,
-            }}
-          >
-            💡 Os termos são removidos do conteúdo antes da busca. Útil para
-            ignorar cabeçalhos, rodapés e palavras repetitivas.
-          </p>
         </div>
       )}
 
@@ -781,7 +921,9 @@ export default function BuscarDocumentosModule() {
                                 }}
                               >
                                 campo:{' '}
-                                <strong style={{ color: 'var(--text-secondary)' }}>
+                                <strong
+                                  style={{ color: 'var(--text-secondary)' }}
+                                >
                                   {occ.field}
                                 </strong>{' '}
                                 • Página ~{occ.page} • Linha {occ.line}, Coluna{' '}
