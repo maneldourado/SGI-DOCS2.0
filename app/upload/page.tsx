@@ -21,10 +21,9 @@ import { loadSettings, saveSettings } from '../lib/settings';
 import { pageStyles, moduleStyles } from '../styles';
 
 // ============================================================
-// Constantes
+// Constants
 // ============================================================
-
-const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const CDN_LOAD_TIMEOUT_MS = 20000;
 const OCR_TIMEOUT_MS = 90000;
 const PDFJS_CDN =
@@ -37,34 +36,35 @@ const DARK_MODE_EVENT = 'sgi:darkModeChanged';
 
 type MessageType = 'info' | 'success' | 'error' | 'warning';
 
+// ✅ Mensagens com cores que funcionam em AMBOS os temas
 const MESSAGE_STYLES: Record<
   MessageType,
   { bg: string; border: string; color: string }
 > = {
   info: {
-    bg: 'rgba(59, 130, 246, 0.1)',
-    border: 'rgba(59, 130, 246, 0.3)',
-    color: '#93c5fd',
+    bg: 'rgba(59, 130, 246, 0.12)',
+    border: 'rgba(59, 130, 246, 0.4)',
+    color: 'var(--accent-light)',
   },
   success: {
-    bg: 'rgba(16, 185, 129, 0.1)',
-    border: 'rgba(16, 185, 129, 0.3)',
-    color: '#6ee7b7',
+    bg: 'rgba(16, 185, 129, 0.12)',
+    border: 'rgba(16, 185, 129, 0.4)',
+    color: '#34d399',
   },
   warning: {
-    bg: 'rgba(245, 158, 11, 0.1)',
-    border: 'rgba(245, 158, 11, 0.3)',
-    color: '#fcd34d',
+    bg: 'rgba(245, 158, 11, 0.12)',
+    border: 'rgba(245, 158, 11, 0.4)',
+    color: '#fbbf24',
   },
   error: {
-    bg: 'rgba(239, 68, 68, 0.1)',
-    border: 'rgba(239, 68, 68, 0.3)',
-    color: '#fca5a5',
+    bg: 'rgba(239, 68, 68, 0.12)',
+    border: 'rgba(239, 68, 68, 0.4)',
+    color: '#f87171',
   },
 };
 
 // ============================================================
-// Utilidades de texto
+// Text utilities
 // ============================================================
 
 function normalizeSpaces(text: string): string {
@@ -77,7 +77,6 @@ function normalizeSpaces(text: string): string {
 
 function removeFooterKeywords(text: string): string {
   let result = text;
-
   result = result.replace(
     /T[ÍI]TULO:\s*[^\n]*?(?=DATA\s+REVIS[ÃA]O:|ELABORA[ÇC][ÃA]O:|APROVA[ÇC][ÃA]O:|P[ÁA]GINA:|P[ÁA]G\.|$)/gi,
     ''
@@ -94,24 +93,19 @@ function removeFooterKeywords(text: string): string {
     /APROVA[ÇC][ÃA]O:\s*[^\n]*?(?=P[ÁA]GINA:|P[ÁA]G\.|$)/gi,
     ''
   );
-
   result = result.replace(/P[ÁA]GINA:\s*\d+\s*(?:de|\/)\s*\d+/gi, '');
   result = result.replace(/P[ÁA]G\.?\s*\d+\s*(?:de|\/)\s*\d+/gi, '');
   result = result.replace(/P[ÁA]G\.?\s*\d+/gi, '');
   result = result.replace(/P[ÁA]GINA\s*\d+/gi, '');
   result = result.replace(/\b\d+\s*\/\s*\d+\b/g, '');
-
   result = result.replace(/REVIS[ÃA]O:\s*\d+/gi, '');
   result = result.replace(/REV\.?\s*\d+/gi, '');
   result = result.replace(/C[ÓO]DIGO:\s*[^\s\n]+/gi, '');
-
   result = result.replace(/C[ÓO]PIA\s+ELETR[ÔO]NICA/gi, '');
   result = result.replace(/C[ÓO]PIA\s+N[ÃA]O\s+CONTROLADA/gi, '');
-
   result = result.replace(/[ \t]{2,}/g, ' ');
   result = result.replace(/[ \t]+\n/g, '\n');
   result = result.replace(/\n{3,}/g, '\n\n');
-
   return result.trim();
 }
 
@@ -145,7 +139,7 @@ function fileKey(file: File): string {
 }
 
 // ============================================================
-// Utilidades de runtime (CDNs)
+// Runtime utilities (CDNs)
 // ============================================================
 
 function loadScriptOnce(src: string, timeoutMs: number): Promise<void> {
@@ -208,7 +202,7 @@ async function ensureTesseract(): Promise<any> {
 }
 
 // ============================================================
-// Processamento de imagem
+// Image processing
 // ============================================================
 
 function preprocessImage(canvas: HTMLCanvasElement): void {
@@ -234,7 +228,7 @@ function shouldUseOcr(pageText: string): boolean {
 }
 
 // ============================================================
-// Componente
+// Component
 // ============================================================
 
 interface UploadError {
@@ -266,18 +260,13 @@ export default function UploadPage() {
   const tesseractWorkerRef = useRef<any>(null);
   const tesseractLoadingRef = useRef<Promise<any> | null>(null);
 
-  // ----------------------------------------------------------
-  // Carrega darkMode e sincroniza com outras telas
-  // ----------------------------------------------------------
   useEffect(() => {
     let cancelled = false;
     loadSettings()
       .then((s) => {
         if (!cancelled) setDarkMode(Boolean(s?.darkMode));
       })
-      .catch(() => {
-        /* ignora */
-      });
+      .catch(() => {});
 
     const handleExternal = (e: Event) => {
       const detail = (e as CustomEvent<{ darkMode?: boolean }>).detail;
@@ -292,49 +281,32 @@ export default function UploadPage() {
     };
   }, []);
 
-  // ----------------------------------------------------------
-  // Cleanup do worker Tesseract
-  // ----------------------------------------------------------
   useEffect(() => {
     return () => {
       if (tesseractWorkerRef.current) {
         try {
           tesseractWorkerRef.current.terminate();
-        } catch {
-          /* ignora */
-        }
+        } catch {}
         tesseractWorkerRef.current = null;
       }
     };
   }, []);
 
-  // ----------------------------------------------------------
-  // Mudança de tema (persiste carregando o Settings completo)
-  // ----------------------------------------------------------
   const handleDarkModeChange = useCallback(async (value: boolean) => {
     setDarkMode(value);
-
     if (typeof window !== 'undefined') {
       try {
         window.dispatchEvent(
           new CustomEvent(DARK_MODE_EVENT, { detail: { darkMode: value } })
         );
-      } catch {
-        /* ignora */
-      }
+      } catch {}
     }
-
     try {
       const current = await loadSettings();
       await saveSettings({ ...current, darkMode: value });
-    } catch {
-      /* ignora erros de persistência */
-    }
+    } catch {}
   }, []);
 
-  // ----------------------------------------------------------
-  // Worker Tesseract reutilizável
-  // ----------------------------------------------------------
   const getTesseractWorker = useCallback(async (): Promise<any> => {
     if (tesseractWorkerRef.current) return tesseractWorkerRef.current;
     if (tesseractLoadingRef.current) return tesseractLoadingRef.current;
@@ -343,12 +315,8 @@ export default function UploadPage() {
       const Tesseract = await ensureTesseract();
       const worker = await Tesseract.createWorker('por+eng');
       try {
-        await worker.setParameters({
-          tessedit_pageseg_mode: '6',
-        });
-      } catch {
-        /* ignora se o parâmetro não for aceito */
-      }
+        await worker.setParameters({ tessedit_pageseg_mode: '6' });
+      } catch {}
       tesseractWorkerRef.current = worker;
       return worker;
     })();
@@ -360,72 +328,59 @@ export default function UploadPage() {
     }
   }, []);
 
-  // ----------------------------------------------------------
-  // Seleção de arquivos
-  // ----------------------------------------------------------
-  const addFiles = useCallback(
-    (incoming: File[], showMessage = true) => {
-      if (incoming.length === 0) return;
+  const addFiles = useCallback((incoming: File[], showMessage = true) => {
+    if (incoming.length === 0) return;
 
-      const tooBig: string[] = [];
-      const notPdf: string[] = [];
-      const valid: File[] = [];
+    const tooBig: string[] = [];
+    const notPdf: string[] = [];
+    const valid: File[] = [];
 
-      for (const f of incoming) {
-        if (!f.name.toLowerCase().endsWith('.pdf')) {
-          notPdf.push(f.name);
-          continue;
-        }
-        if (f.size > MAX_FILE_SIZE_BYTES) {
-          tooBig.push(f.name);
-          continue;
-        }
-        valid.push(f);
+    for (const f of incoming) {
+      if (!f.name.toLowerCase().endsWith('.pdf')) {
+        notPdf.push(f.name);
+        continue;
       }
-
-      setFiles((prev) => {
-        const existing = new Set(prev.map(fileKey));
-        const deduped: File[] = [];
-        for (const f of valid) {
-          const k = fileKey(f);
-          if (existing.has(k)) continue;
-          existing.add(k);
-          deduped.push(f);
-        }
-        return [...prev, ...deduped];
-      });
-
-      if (showMessage) {
-        const problems: string[] = [];
-        if (notPdf.length)
-          problems.push(`${notPdf.length} arquivo(s) não-PDF ignorado(s)`);
-        if (tooBig.length)
-          problems.push(
-            `${tooBig.length} arquivo(s) acima de 50 MB ignorado(s)`
-          );
-        if (problems.length > 0) {
-          setMessage(`⚠️ ${problems.join('. ')}.`);
-          setMessageType('warning');
-        } else if (valid.length > 0) {
-          setMessage(`✅ ${valid.length} arquivo(s) adicionado(s).`);
-          setMessageType('success');
-        }
+      if (f.size > MAX_FILE_SIZE_BYTES) {
+        tooBig.push(f.name);
+        continue;
       }
-    },
-    []
-  );
+      valid.push(f);
+    }
+
+    setFiles((prev) => {
+      const existing = new Set(prev.map(fileKey));
+      const deduped: File[] = [];
+      for (const f of valid) {
+        const k = fileKey(f);
+        if (existing.has(k)) continue;
+        existing.add(k);
+        deduped.push(f);
+      }
+      return [...prev, ...deduped];
+    });
+
+    if (showMessage) {
+      const problems: string[] = [];
+      if (notPdf.length)
+        problems.push(`${notPdf.length} arquivo(s) não-PDF ignorado(s)`);
+      if (tooBig.length)
+        problems.push(`${tooBig.length} arquivo(s) acima de 50 MB ignorado(s)`);
+      if (problems.length > 0) {
+        setMessage(`⚠️ ${problems.join('. ')}.`);
+        setMessageType('warning');
+      } else if (valid.length > 0) {
+        setMessage(`✅ ${valid.length} arquivo(s) adicionado(s).`);
+        setMessageType('success');
+      }
+    }
+  }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target;
-    if (input.files) {
-      addFiles(Array.from(input.files));
-    }
+    if (input.files) addFiles(Array.from(input.files));
     input.value = '';
   };
 
-  // ----------------------------------------------------------
-  // Drag & Drop
-  // ----------------------------------------------------------
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -448,8 +403,7 @@ export default function UploadPage() {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-    const dropped = Array.from(e.dataTransfer.files);
-    addFiles(dropped);
+    addFiles(Array.from(e.dataTransfer.files));
   };
 
   const removeFile = (key: string) => {
@@ -465,13 +419,9 @@ export default function UploadPage() {
     }
   };
 
-  // ----------------------------------------------------------
-  // Extração de texto de um PDF
-  // ----------------------------------------------------------
   const extractPDFText = useCallback(
     async (file: File, seq: number): Promise<string> => {
       const pdfjsLib = await ensurePdfJs();
-
       const arrayBuffer = await file.arrayBuffer();
       const bytes = new Uint8Array(arrayBuffer);
 
@@ -525,7 +475,6 @@ export default function UploadPage() {
           canvas.height = 0;
 
           const worker = await getTesseractWorker();
-
           const ocrPromise = worker.recognize(imageDataUrl);
           const timeoutPromise = new Promise<never>((_, reject) => {
             window.setTimeout(
@@ -536,19 +485,14 @@ export default function UploadPage() {
 
           let ocrText = '';
           try {
-            const result: any = await Promise.race([
-              ocrPromise,
-              timeoutPromise,
-            ]);
+            const result: any = await Promise.race([ocrPromise, timeoutPromise]);
             ocrText = result?.data?.text ?? '';
           } catch (err: any) {
             if (String(err?.message || '').includes('Tempo esgotado')) {
               if (tesseractWorkerRef.current) {
                 try {
                   tesseractWorkerRef.current.terminate();
-                } catch {
-                  /* ignora */
-                }
+                } catch {}
                 tesseractWorkerRef.current = null;
               }
             }
@@ -569,9 +513,7 @@ export default function UploadPage() {
 
       try {
         if (typeof pdf.destroy === 'function') await pdf.destroy();
-      } catch {
-        /* ignora */
-      }
+      } catch {}
 
       void seq;
       return parts.join('\n');
@@ -579,9 +521,6 @@ export default function UploadPage() {
     [getTesseractWorker]
   );
 
-  // ----------------------------------------------------------
-  // Upload
-  // ----------------------------------------------------------
   const handleUpload = async () => {
     if (uploading) return;
     if (files.length === 0) {
@@ -604,14 +543,11 @@ export default function UploadPage() {
       if (cancelRef.current) break;
 
       const file = files[i];
-      setMessage(
-        `Processando ${i + 1} de ${files.length}: ${file.name}`
-      );
+      setMessage(`Processando ${i + 1} de ${files.length}: ${file.name}`);
       setMessageType('info');
 
       try {
         const content = await extractPDFText(file, i);
-
         let finalContent = removeFooterKeywords(content);
 
         if (removeExtraSpaces) {
@@ -645,8 +581,7 @@ export default function UploadPage() {
 
         successCount++;
       } catch (error) {
-        const reason =
-          error instanceof Error ? error.message : String(error);
+        const reason = error instanceof Error ? error.message : String(error);
         console.error(`Erro no arquivo ${file.name}:`, error);
         errors.push({ file: file.name, reason });
         errorCount++;
@@ -692,9 +627,6 @@ export default function UploadPage() {
     setMessageType('warning');
   };
 
-  // ----------------------------------------------------------
-  // Navegação pelo Sidebar
-  // ----------------------------------------------------------
   const handleModuleChange = (module: string) => {
     if (module === 'dashboard') router.push('/');
     else if (module === 'documentos') router.push('/');
@@ -707,6 +639,38 @@ export default function UploadPage() {
       : 0;
 
   const messageStyle = MESSAGE_STYLES[messageType];
+
+  // ✅ Labels reutilizáveis (usam CSS vars)
+  const labelStyle: React.CSSProperties = {
+    display: 'block',
+    fontSize: '0.75rem',
+    fontWeight: 600,
+    color: 'var(--text-muted)',
+    marginBottom: '0.5rem',
+  };
+
+  const subLabelStyle: React.CSSProperties = {
+    display: 'block',
+    fontSize: '0.7rem',
+    fontWeight: 600,
+    color: 'var(--text-muted)',
+    marginBottom: '0.5rem',
+  };
+
+  const backButtonStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border-primary)',
+    borderRadius: '0.75rem',
+    padding: '0.625rem 1rem',
+    color: 'var(--text-muted)',
+    fontSize: '0.875rem',
+    fontWeight: 500,
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  };
 
   return (
     <div style={pageStyles.container}>
@@ -729,19 +693,7 @@ export default function UploadPage() {
           <button
             type="button"
             onClick={() => router.push('/')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              background: 'rgba(15, 30, 58, 0.6)',
-              border: '1px solid rgba(59, 130, 246, 0.2)',
-              borderRadius: '0.75rem',
-              padding: '0.625rem 1rem',
-              color: '#94a3b8',
-              fontSize: '0.875rem',
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
+            style={backButtonStyle}
           >
             <ArrowLeft size={16} />
             Voltar
@@ -756,35 +708,23 @@ export default function UploadPage() {
               gap: '1.5rem',
             }}
           >
-            {/* Coluna Esquerda */}
+            {/* Left Column */}
             <div style={moduleStyles.card}>
               <div style={moduleStyles.cardHeader}>
                 <h2 style={moduleStyles.cardTitle}>
-                  <Upload size={18} color="#3b82f6" />
+                  <Upload size={18} color="var(--accent)" />
                   Configurações de Envio
                 </h2>
               </div>
 
-              <div
-                style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
-              >
-                {/* Categoria */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {/* Category */}
                 <div>
-                  <label
-                    htmlFor="upload-category"
-                    style={{
-                      display: 'block',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      color: '#94a3b8',
-                      marginBottom: '0.5rem',
-                    }}
-                  >
+                  <label htmlFor="upload-category" style={labelStyle}>
                     Categoria
                   </label>
                   <select
                     id="upload-category"
-                    data-theme="dark"
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
                     disabled={uploading}
@@ -793,10 +733,10 @@ export default function UploadPage() {
                       padding: '0.75rem 1rem',
                       paddingRight: '2.5rem',
                       fontSize: '0.8rem',
-                      border: '1px solid rgba(59, 130, 246, 0.2)',
+                      border: '1px solid var(--border-input)',
                       borderRadius: '0.75rem',
-                      background: '#0f1e3a',
-                      color: 'white',
+                      background: 'var(--bg-input)',
+                      color: 'var(--text-primary)',
                       outline: 'none',
                       appearance: 'none',
                       backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
@@ -817,13 +757,13 @@ export default function UploadPage() {
                   </select>
                 </div>
 
-                {/* Configurações de Extração */}
+                {/* Extraction config */}
                 <div
                   style={{
-                    background: 'rgba(30, 58, 95, 0.2)',
+                    background: 'var(--bg-input)',
                     borderRadius: '0.75rem',
                     padding: '1rem',
-                    border: '1px solid rgba(59, 130, 246, 0.1)',
+                    border: '1px solid var(--border-primary)',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '0.75rem',
@@ -833,7 +773,7 @@ export default function UploadPage() {
                     style={{
                       fontSize: '0.75rem',
                       fontWeight: 700,
-                      color: '#cbd5e1',
+                      color: 'var(--text-secondary)',
                       margin: 0,
                     }}
                   >
@@ -841,17 +781,7 @@ export default function UploadPage() {
                   </h3>
 
                   <div>
-                    <span
-                      style={{
-                        display: 'block',
-                        fontSize: '0.7rem',
-                        fontWeight: 600,
-                        color: '#94a3b8',
-                        marginBottom: '0.5rem',
-                      }}
-                    >
-                      Orientação do documento
-                    </span>
+                    <span style={subLabelStyle}>Orientação do documento</span>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button
                         type="button"
@@ -866,15 +796,17 @@ export default function UploadPage() {
                           fontWeight: 600,
                           border: `1px solid ${
                             orientation === 'portrait'
-                              ? '#3b82f6'
-                              : 'rgba(59, 130, 246, 0.2)'
+                              ? 'var(--accent)'
+                              : 'var(--border-input)'
                           }`,
                           background:
                             orientation === 'portrait'
-                              ? 'rgba(59, 130, 246, 0.2)'
-                              : 'rgba(15, 30, 58, 0.4)',
+                              ? 'rgba(59, 130, 246, 0.15)'
+                              : 'var(--bg-card)',
                           color:
-                            orientation === 'portrait' ? '#60a5fa' : '#94a3b8',
+                            orientation === 'portrait'
+                              ? 'var(--accent-light)'
+                              : 'var(--text-muted)',
                           cursor: uploading ? 'not-allowed' : 'pointer',
                           opacity: uploading ? 0.6 : 1,
                         }}
@@ -894,17 +826,17 @@ export default function UploadPage() {
                           fontWeight: 600,
                           border: `1px solid ${
                             orientation === 'landscape'
-                              ? '#3b82f6'
-                              : 'rgba(59, 130, 246, 0.2)'
+                              ? 'var(--accent)'
+                              : 'var(--border-input)'
                           }`,
                           background:
                             orientation === 'landscape'
-                              ? 'rgba(59, 130, 246, 0.2)'
-                              : 'rgba(15, 30, 58, 0.4)',
+                              ? 'rgba(59, 130, 246, 0.15)'
+                              : 'var(--bg-card)',
                           color:
                             orientation === 'landscape'
-                              ? '#60a5fa'
-                              : '#94a3b8',
+                              ? 'var(--accent-light)'
+                              : 'var(--text-muted)',
                           cursor: uploading ? 'not-allowed' : 'pointer',
                           opacity: uploading ? 0.6 : 1,
                         }}
@@ -921,12 +853,11 @@ export default function UploadPage() {
                       gap: '0.5rem',
                       cursor: uploading ? 'not-allowed' : 'pointer',
                       fontSize: '0.75rem',
-                      color: '#cbd5e1',
+                      color: 'var(--text-secondary)',
                       fontWeight: 500,
                     }}
                   >
                     <input
-                      data-theme="dark"
                       type="checkbox"
                       checked={removeExtraSpaces}
                       disabled={uploading}
@@ -938,16 +869,7 @@ export default function UploadPage() {
 
                 {/* Dropzone */}
                 <div>
-                  <label
-                    htmlFor="pdf-input"
-                    style={{
-                      display: 'block',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      color: '#94a3b8',
-                      marginBottom: '0.5rem',
-                    }}
-                  >
+                  <label htmlFor="pdf-input" style={labelStyle}>
                     Arquivos PDF *
                   </label>
                   <div
@@ -965,16 +887,14 @@ export default function UploadPage() {
                     }}
                     style={{
                       border: `2px dashed ${
-                        isDragging
-                          ? '#3b82f6'
-                          : 'rgba(59, 130, 246, 0.3)'
+                        isDragging ? 'var(--accent)' : 'var(--border-input)'
                       }`,
                       borderRadius: '1rem',
                       padding: '2.5rem',
                       textAlign: 'center',
                       background: isDragging
-                        ? 'rgba(59, 130, 246, 0.15)'
-                        : 'rgba(30, 58, 95, 0.2)',
+                        ? 'rgba(59, 130, 246, 0.1)'
+                        : 'var(--bg-input)',
                       transition: 'all 0.2s',
                       cursor: uploading ? 'not-allowed' : 'pointer',
                       transform: isDragging ? 'scale(1.02)' : 'scale(1)',
@@ -1011,7 +931,7 @@ export default function UploadPage() {
                     <p
                       style={{
                         fontSize: '0.9rem',
-                        color: 'white',
+                        color: 'var(--text-primary)',
                         margin: '0.5rem 0 0',
                         fontWeight: 600,
                       }}
@@ -1023,7 +943,7 @@ export default function UploadPage() {
                     <p
                       style={{
                         fontSize: '0.75rem',
-                        color: '#94a3b8',
+                        color: 'var(--text-muted)',
                         margin: '0.25rem 0 1rem',
                       }}
                     >
@@ -1059,20 +979,14 @@ export default function UploadPage() {
                   </div>
                 </div>
 
-                {/* Lista de arquivos */}
+                {/* File list */}
                 {files.length > 0 && (
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.5rem',
-                    }}
-                  >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     <p
                       style={{
                         fontSize: '0.75rem',
                         fontWeight: 600,
-                        color: '#cbd5e1',
+                        color: 'var(--text-secondary)',
                         margin: 0,
                       }}
                     >
@@ -1096,10 +1010,10 @@ export default function UploadPage() {
                               display: 'flex',
                               alignItems: 'center',
                               gap: '0.75rem',
-                              background: 'rgba(30, 58, 95, 0.3)',
+                              background: 'var(--bg-card-hover)',
                               padding: '0.75rem',
                               borderRadius: '0.75rem',
-                              border: '1px solid rgba(59, 130, 246, 0.15)',
+                              border: '1px solid var(--border-primary)',
                               opacity: uploading ? 0.6 : 1,
                             }}
                           >
@@ -1122,7 +1036,7 @@ export default function UploadPage() {
                               <p
                                 style={{
                                   fontSize: '0.75rem',
-                                  color: 'white',
+                                  color: 'var(--text-primary)',
                                   margin: 0,
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
@@ -1134,7 +1048,7 @@ export default function UploadPage() {
                               <p
                                 style={{
                                   fontSize: '0.65rem',
-                                  color: '#94a3b8',
+                                  color: 'var(--text-muted)',
                                   margin: '0.125rem 0 0',
                                 }}
                               >
@@ -1148,7 +1062,7 @@ export default function UploadPage() {
                               aria-label={`Remover ${file.name}`}
                               title="Remover"
                               style={{
-                                color: '#64748b',
+                                color: 'var(--text-dim)',
                                 background: 'none',
                                 border: 'none',
                                 cursor: uploading ? 'not-allowed' : 'pointer',
@@ -1165,7 +1079,7 @@ export default function UploadPage() {
                   </div>
                 )}
 
-                {/* Barra de progresso */}
+                {/* Progress */}
                 {uploading && progress.total > 0 && (
                   <div>
                     <div
@@ -1173,7 +1087,7 @@ export default function UploadPage() {
                         display: 'flex',
                         justifyContent: 'space-between',
                         fontSize: '0.7rem',
-                        color: '#94a3b8',
+                        color: 'var(--text-muted)',
                         marginBottom: '0.5rem',
                       }}
                     >
@@ -1203,7 +1117,7 @@ export default function UploadPage() {
                   </div>
                 )}
 
-                {/* Botão de enviar / cancelar */}
+                {/* Upload / Cancel */}
                 {!uploading ? (
                   <button
                     type="button"
@@ -1230,8 +1144,7 @@ export default function UploadPage() {
                       fontWeight: 600,
                       fontSize: '0.875rem',
                       border: 'none',
-                      cursor:
-                        files.length === 0 ? 'not-allowed' : 'pointer',
+                      cursor: files.length === 0 ? 'not-allowed' : 'pointer',
                       boxShadow:
                         files.length === 0
                           ? 'none'
@@ -1253,7 +1166,7 @@ export default function UploadPage() {
                       gap: '0.5rem',
                       background: 'rgba(239, 68, 68, 0.15)',
                       border: '1px solid rgba(239, 68, 68, 0.4)',
-                      color: '#fca5a5',
+                      color: '#f87171',
                       padding: '0.875rem',
                       borderRadius: '0.75rem',
                       fontWeight: 600,
@@ -1269,7 +1182,7 @@ export default function UploadPage() {
                   </button>
                 )}
 
-                {/* Mensagem */}
+                {/* Message */}
                 {message && (
                   <div
                     role="status"
@@ -1287,7 +1200,7 @@ export default function UploadPage() {
                   </div>
                 )}
 
-                {/* Erros detalhados */}
+                {/* Errors */}
                 {uploadErrors.length > 0 && (
                   <div
                     style={{
@@ -1305,7 +1218,7 @@ export default function UploadPage() {
                         margin: 0,
                         fontSize: '0.75rem',
                         fontWeight: 700,
-                        color: '#fca5a5',
+                        color: '#f87171',
                       }}
                     >
                       <AlertTriangle size={14} />
@@ -1320,14 +1233,12 @@ export default function UploadPage() {
                         flexDirection: 'column',
                         gap: '0.25rem',
                         fontSize: '0.7rem',
-                        color: '#cbd5e1',
+                        color: 'var(--text-secondary)',
                       }}
                     >
                       {uploadErrors.map((e, i) => (
                         <li key={`${e.file}-${i}`}>
-                          <strong style={{ color: '#fca5a5' }}>
-                            {e.file}
-                          </strong>
+                          <strong style={{ color: '#f87171' }}>{e.file}</strong>
                           : {e.reason}
                         </li>
                       ))}
@@ -1337,21 +1248,19 @@ export default function UploadPage() {
               </div>
             </div>
 
-            {/* Coluna Direita */}
-            <div
-              style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}
-            >
+            {/* Right Column */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div style={moduleStyles.card}>
                 <div style={moduleStyles.cardHeader}>
                   <h2 style={moduleStyles.cardTitle}>
-                    <CheckCircle2 size={18} color="#3b82f6" />
+                    <CheckCircle2 size={18} color="var(--accent)" />
                     Como funciona
                   </h2>
                 </div>
                 <p
                   style={{
                     fontSize: '0.8rem',
-                    color: '#94a3b8',
+                    color: 'var(--text-muted)',
                     margin: '0 0 1rem',
                     lineHeight: 1.5,
                   }}
@@ -1359,42 +1268,16 @@ export default function UploadPage() {
                   Nosso sistema utiliza OCR avançado para extrair texto dos seus
                   PDFs.
                 </p>
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.75rem',
-                  }}
-                >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                   {[
-                    {
-                      n: 1,
-                      t: 'Selecione os arquivos',
-                      d: 'Arraste ou clique para escolher vários PDFs',
-                    },
-                    {
-                      n: 2,
-                      t: 'Extração automática',
-                      d: 'O OCR extrai o texto de cada um',
-                    },
-                    {
-                      n: 3,
-                      t: 'Título e código automáticos',
-                      d: 'Gerados a partir do nome do arquivo',
-                    },
-                    {
-                      n: 4,
-                      t: 'Disponível para busca',
-                      d: 'Encontre informações em segundos',
-                    },
+                    { n: 1, t: 'Selecione os arquivos', d: 'Arraste ou clique para escolher vários PDFs' },
+                    { n: 2, t: 'Extração automática', d: 'O OCR extrai o texto de cada um' },
+                    { n: 3, t: 'Título e código automáticos', d: 'Gerados a partir do nome do arquivo' },
+                    { n: 4, t: 'Disponível para busca', d: 'Encontre informações em segundos' },
                   ].map((item) => (
                     <div
                       key={item.n}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: '0.75rem',
-                      }}
+                      style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}
                     >
                       <span
                         style={{
@@ -1419,7 +1302,7 @@ export default function UploadPage() {
                           style={{
                             fontSize: '0.8rem',
                             fontWeight: 600,
-                            color: 'white',
+                            color: 'var(--text-primary)',
                             margin: 0,
                           }}
                         >
@@ -1428,7 +1311,7 @@ export default function UploadPage() {
                         <p
                           style={{
                             fontSize: '0.7rem',
-                            color: '#94a3b8',
+                            color: 'var(--text-muted)',
                             margin: '0.125rem 0 0',
                           }}
                         >
@@ -1440,12 +1323,12 @@ export default function UploadPage() {
                 </div>
               </div>
 
+              {/* Tips card - now uses CSS vars */}
               <div
                 style={{
-                  background:
-                    'linear-gradient(135deg, rgba(30, 58, 95, 0.6) 0%, rgba(15, 30, 58, 0.8) 100%)',
+                  background: 'var(--bg-card)',
                   borderRadius: '1rem',
-                  border: '1px solid rgba(59, 130, 246, 0.2)',
+                  border: '1px solid var(--border-primary)',
                   padding: '1.5rem',
                 }}
               >
@@ -1453,7 +1336,7 @@ export default function UploadPage() {
                   style={{
                     fontSize: '1rem',
                     fontWeight: 700,
-                    color: 'white',
+                    color: 'var(--text-primary)',
                     margin: '0 0 1rem',
                     display: 'flex',
                     alignItems: 'center',
@@ -1471,7 +1354,7 @@ export default function UploadPage() {
                     flexDirection: 'column',
                     gap: '0.5rem',
                     fontSize: '0.75rem',
-                    color: '#cbd5e1',
+                    color: 'var(--text-secondary)',
                     lineHeight: 1.5,
                   }}
                 >
@@ -1484,6 +1367,7 @@ export default function UploadPage() {
                 </ul>
               </div>
 
+              {/* Feature badges - now uses CSS vars */}
               <div
                 style={{
                   display: 'grid',
@@ -1504,16 +1388,16 @@ export default function UploadPage() {
                       alignItems: 'center',
                       gap: '0.375rem',
                       padding: '0.75rem 0.5rem',
-                      background: 'rgba(15, 30, 58, 0.5)',
-                      border: '1px solid rgba(59, 130, 246, 0.15)',
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border-primary)',
                       borderRadius: '0.75rem',
                       fontSize: '0.65rem',
-                      color: '#94a3b8',
+                      color: 'var(--text-muted)',
                       fontWeight: 500,
                       textAlign: 'center',
                     }}
                   >
-                    <item.icon size={16} color="#3b82f6" />
+                    <item.icon size={16} color="var(--accent)" />
                     {item.label}
                   </div>
                 ))}
