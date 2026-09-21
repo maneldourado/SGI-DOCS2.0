@@ -8,6 +8,7 @@ import {
   Filter,
   ChevronDown,
   ChevronUp,
+  Ban,
 } from 'lucide-react';
 import { searchDocuments } from './lib/documents';
 import type { DocumentData } from './lib/supabase';
@@ -16,14 +17,9 @@ import { buscarModuleStyles } from './styles';
 // ============================================================
 // Constantes
 // ============================================================
-
-/** Estimativa de caracteres por página (fallback quando não temos páginas reais). */
 const CHARS_PER_PAGE_ESTIMATE = 3000;
-
-/** Quantidade de caracteres de contexto antes/depois de cada match. */
 const SNIPPET_CONTEXT_CHARS = 150;
 
-/** Campos string que serão varridos em cada documento. */
 const SEARCHABLE_FIELDS = [
   'title',
   'code',
@@ -35,7 +31,7 @@ const SEARCHABLE_FIELDS = [
 type SearchableField = (typeof SEARCHABLE_FIELDS)[number];
 
 // ============================================================
-// Normalização (remove acentos + minúsculas)
+// Normalização
 // ============================================================
 
 /**
@@ -43,20 +39,19 @@ type SearchableField = (typeof SEARCHABLE_FIELDS)[number];
  *  - NFD: decompõe caracteres acentuados
  *  - remove marcas combinantes (\u0300–\u036f)
  *  - toLowerCase
+ *  - ✅ REMOVE espaços, hífens, pontos, etc. (para busca flexível)
  */
 function normalizeForSearch(text: string): string {
   return text
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/[\s\-_.:;,()\[\]{}!?@#$%^&*+=~`<>|\\/\"']/g, ''); // ✅ remove símbolos
 }
 
 /**
  * Constrói a versão normalizada do texto + mapas de início/fim (em code units)
- * para cada caractere normalizado. Isso permite recuperar a posição EXATA
- * no texto original, mesmo com acentos/cedilha etc.
- *
- * Usamos iteração por code point (`for...of`) para não quebrar surrogates.
+ * para cada caractere normalizado.
  */
 function normalizeWithMap(text: string): {
   normalized: string;
@@ -79,6 +74,23 @@ function normalizeWithMap(text: string): {
   }
 
   return { normalized, starts, ends };
+}
+
+// ============================================================
+// ✅ Remove palavras/termos a excluir do texto
+// ============================================================
+function removeExcludedTerms(text: string, excludeTerms: string[]): string {
+  if (excludeTerms.length === 0) return text;
+
+  let result = text;
+  for (const term of excludeTerms) {
+    if (!term) continue;
+    // Cria regex case-insensitive para remover o termo (com espaços flexíveis)
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'gi');
+    result = result.replace(regex, ' ');
+  }
+  return result.replace(/\s{2,}/g, ' ');
 }
 
 // ============================================================
@@ -112,23 +124,14 @@ function estimatePage(_content: string, charIndex: number): number {
 
 interface Occurrence {
   field: SearchableField;
-  /** Índice inicial do match no texto original (code units) */
   start: number;
-  /** Índice final EXCLUSIVO no texto original */
   end: number;
-  /** Linha (1-based) */
   line: number;
-  /** Coluna (1-based) */
   column: number;
-  /** Página estimada */
   page: number;
-  /** Trecho de contexto extraído do texto original */
   snippet: string;
-  /** Offset de início do snippet no texto original */
   snippetStart: number;
-  /** Offset do match DENTRO do snippet */
   matchStartInSnippet: number;
-  /** Comprimento do match dentro do snippet */
   matchLengthInSnippet: number;
 }
 
@@ -141,13 +144,6 @@ interface GroupedResult {
 // Busca de ocorrências
 // ============================================================
 
-/**
- * Encontra TODAS as ocorrências (inclusive sobrepostas) de `needleNormalized`
- * em `haystack`, retornando posições no texto ORIGINAL.
- *
- * Importante: avança de 1 em 1 no índice normalizado para capturar
- * ocorrências sobrepostas (ex.: "aa" em "aaa" → 2 ocorrências).
- */
 function findAllOccurrencePositions(
   haystack: string,
   needleNormalized: string
@@ -169,7 +165,6 @@ function findAllOccurrencePositions(
       end: ends[lastNormIndex],
     });
 
-    // +1 para permitir matches sobrepostos
     searchFrom = found + 1;
   }
 
@@ -204,7 +199,6 @@ function buildOccurrences(
   });
 }
 
-/** Recupera todos os campos string pesquisáveis do documento. */
 function getSearchableFields(
   doc: DocumentData
 ): { field: SearchableField; value: string }[] {
@@ -229,19 +223,28 @@ export default function BuscarDocumentosModule() {
   const [searchTerm, setSearchTerm] = useState('');
   const [category, setCategory] = useState('Todas');
   const [dateFilter, setDateFilter] = useState('');
+  const [excludeTerms, setExcludeTerms] = useState(''); // ✅ NOVO
   const [groupedResults, setGroupedResults] = useState<GroupedResult[]>([]);
   const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [showExclude, setShowExclude] = useState(false); // ✅ NOVO
 
-  // Guarda o ID da requisição atual para evitar race conditions
   const requestIdRef = useRef(0);
 
   const totalMatches = useMemo(
     () => groupedResults.reduce((acc, g) => acc + g.occurrences.length, 0),
     [groupedResults]
   );
+
+  // ✅ Processa os termos a excluir
+  const parsedExcludeTerms = useMemo(() => {
+    return excludeTerms
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0);
+  }, [excludeTerms]);
 
   const handleSearch = async () => {
     const trimmed = searchTerm.trim();
@@ -266,7 +269,6 @@ export default function BuscarDocumentosModule() {
         date: dateFilter || undefined,
       });
 
-      // Descarta resposta obsoleta
       if (requestId !== requestIdRef.current) return;
 
       const needleNormalized = normalizeForSearch(trimmed);
@@ -283,7 +285,12 @@ export default function BuscarDocumentosModule() {
         const occurrences: Occurrence[] = [];
 
         for (const { field, value } of fields) {
-          occurrences.push(...buildOccurrences(field, value, needleNormalized));
+          // ✅ Remove os termos a excluir ANTES de buscar
+          const cleanedValue = removeExcludedTerms(value, parsedExcludeTerms);
+
+          occurrences.push(
+            ...buildOccurrences(field, cleanedValue, needleNormalized)
+          );
         }
 
         if (occurrences.length > 0) {
@@ -299,7 +306,7 @@ export default function BuscarDocumentosModule() {
           setError('Nenhum documento corresponde aos filtros selecionados.');
         } else {
           setError(
-            'Documentos foram encontrados, mas o termo exato não pôde ser localizado nos campos pesquisáveis (título, código, conteúdo, descrição, categoria).'
+            'Documentos foram encontrados, mas o termo exato não pôde ser localizado nos campos pesquisáveis.'
           );
         }
       }
@@ -319,19 +326,8 @@ export default function BuscarDocumentosModule() {
     if (e.key === 'Enter') handleSearch();
   };
 
-  // Limpa erro assim que o usuário altera qualquer filtro
   const handleTermChange = (value: string) => {
     setSearchTerm(value);
-    if (error) setError(null);
-  };
-
-  const handleCategoryChange = (value: string) => {
-    setCategory(value);
-    if (error) setError(null);
-  };
-
-  const handleDateChange = (value: string) => {
-    setDateFilter(value);
     if (error) setError(null);
   };
 
@@ -356,7 +352,7 @@ export default function BuscarDocumentosModule() {
     <div style={buscarModuleStyles.container}>
       {/* Cabeçalho */}
       <div style={buscarModuleStyles.header}>
-        <Filter size={18} style={{ color: '#3b82f6' }} />
+        <Filter size={18} style={{ color: 'var(--accent)' }} />
         <h2 style={buscarModuleStyles.title}>Busca Inteligente</h2>
       </div>
 
@@ -369,7 +365,7 @@ export default function BuscarDocumentosModule() {
               left: '0.75rem',
               top: '50%',
               transform: 'translateY(-50%)',
-              color: '#64748b',
+              color: 'var(--text-dim)',
             }}
             size={16}
           />
@@ -384,9 +380,8 @@ export default function BuscarDocumentosModule() {
         </div>
 
         <select
-          data-theme="dark"
           value={category}
-          onChange={(e) => handleCategoryChange(e.target.value)}
+          onChange={(e) => setCategory(e.target.value)}
           style={buscarModuleStyles.select}
         >
           <option value="Todas">Todas as categorias</option>
@@ -401,12 +396,52 @@ export default function BuscarDocumentosModule() {
         </select>
 
         <input
-          data-theme="dark"
           type="date"
           value={dateFilter}
-          onChange={(e) => handleDateChange(e.target.value)}
+          onChange={(e) => setDateFilter(e.target.value)}
           style={buscarModuleStyles.dateInput}
         />
+
+        {/* ✅ Botão para mostrar/ocultar campo de exclusão */}
+        <button
+          type="button"
+          onClick={() => setShowExclude(!showExclude)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.75rem 1rem',
+            background: showExclude
+              ? 'rgba(239, 68, 68, 0.15)'
+              : 'var(--bg-input)',
+            border: `1px solid ${
+              showExclude ? 'rgba(239, 68, 68, 0.4)' : 'var(--border-input)'
+            }`,
+            borderRadius: '0.75rem',
+            color: showExclude ? '#fca5a5' : 'var(--text-muted)',
+            fontSize: '0.8rem',
+            cursor: 'pointer',
+            fontWeight: 600,
+            transition: 'all 0.2s',
+          }}
+        >
+          <Ban size={14} />
+          Excluir termos
+          {parsedExcludeTerms.length > 0 && (
+            <span
+              style={{
+                background: '#ef4444',
+                color: 'white',
+                fontSize: '0.6rem',
+                padding: '0.125rem 0.375rem',
+                borderRadius: '9999px',
+                fontWeight: 700,
+              }}
+            >
+              {parsedExcludeTerms.length}
+            </span>
+          )}
+        </button>
 
         <button
           onClick={handleSearch}
@@ -417,10 +452,88 @@ export default function BuscarDocumentosModule() {
         </button>
       </div>
 
+      {/* ✅ Campo de termos a excluir */}
+      {showExclude && (
+        <div
+          style={{
+            marginTop: '0.75rem',
+            padding: '1rem',
+            background: 'rgba(239, 68, 68, 0.05)',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+            borderRadius: '0.75rem',
+          }}
+        >
+          <label
+            style={{
+              display: 'block',
+              fontSize: '0.7rem',
+              fontWeight: 600,
+              color: '#fca5a5',
+              marginBottom: '0.5rem',
+            }}
+          >
+            Digite os termos a serem excluídos (separados por vírgula)
+          </label>
+          <input
+            type="text"
+            value={excludeTerms}
+            onChange={(e) => setExcludeTerms(e.target.value)}
+            placeholder="Ex: ELABORAÇÃO, TÍTULO, APROVAÇÃO"
+            style={{
+              width: '100%',
+              padding: '0.75rem 1rem',
+              fontSize: '0.8rem',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: '0.75rem',
+              background: 'var(--bg-input)',
+              color: 'var(--text-primary)',
+              outline: 'none',
+            }}
+          />
+          {parsedExcludeTerms.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '0.375rem',
+                marginTop: '0.5rem',
+              }}
+            >
+              {parsedExcludeTerms.map((term, i) => (
+                <span
+                  key={i}
+                  style={{
+                    fontSize: '0.65rem',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: '#fca5a5',
+                    padding: '0.2rem 0.5rem',
+                    borderRadius: '9999px',
+                    fontWeight: 600,
+                  }}
+                >
+                  {term}
+                </span>
+              ))}
+            </div>
+          )}
+          <p
+            style={{
+              fontSize: '0.65rem',
+              color: 'var(--text-dim)',
+              margin: '0.5rem 0 0',
+              lineHeight: 1.5,
+            }}
+          >
+            💡 Os termos são removidos do conteúdo antes da busca. Útil para
+            ignorar cabeçalhos, rodapés e palavras repetitivas.
+          </p>
+        </div>
+      )}
+
       {/* Erro */}
       {error && <div style={buscarModuleStyles.errorContainer}>{error}</div>}
 
-      {/* Resultados agrupados (sanfona) */}
+      {/* Resultados */}
       {groupedResults.length > 0 && (
         <div style={buscarModuleStyles.resultsContainer}>
           <div
@@ -443,7 +556,7 @@ export default function BuscarDocumentosModule() {
                 onClick={expandAll}
                 style={{
                   fontSize: '0.7rem',
-                  color: '#60a5fa',
+                  color: 'var(--accent-light)',
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
@@ -456,7 +569,7 @@ export default function BuscarDocumentosModule() {
                 onClick={collapseAll}
                 style={{
                   fontSize: '0.7rem',
-                  color: '#94a3b8',
+                  color: 'var(--text-muted)',
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
@@ -486,13 +599,12 @@ export default function BuscarDocumentosModule() {
                 <div
                   key={docId}
                   style={{
-                    border: '1px solid rgba(59, 130, 246, 0.15)',
+                    border: '1px solid var(--border-primary)',
                     borderRadius: '0.75rem',
                     overflow: 'hidden',
-                    background: 'rgba(30, 58, 95, 0.2)',
+                    background: 'var(--bg-card)',
                   }}
                 >
-                  {/* Cabeçalho clicável */}
                   <button
                     onClick={() => toggleExpand(docId)}
                     style={{
@@ -502,7 +614,7 @@ export default function BuscarDocumentosModule() {
                       justifyContent: 'space-between',
                       padding: '1rem',
                       backgroundColor: isExpanded
-                        ? 'rgba(30, 58, 95, 0.4)'
+                        ? 'var(--bg-card-hover)'
                         : 'transparent',
                       border: 'none',
                       cursor: 'pointer',
@@ -545,13 +657,16 @@ export default function BuscarDocumentosModule() {
                             style={{
                               fontWeight: 700,
                               fontSize: '0.8rem',
-                              color: 'white',
+                              color: 'var(--text-primary)',
                             }}
                           >
                             {group.document.code}
                           </span>
                           <span
-                            style={{ fontSize: '0.7rem', color: '#94a3b8' }}
+                            style={{
+                              fontSize: '0.7rem',
+                              color: 'var(--text-muted)',
+                            }}
                           >
                             {group.document.title}
                           </span>
@@ -559,7 +674,7 @@ export default function BuscarDocumentosModule() {
                         <p
                           style={{
                             fontSize: '0.65rem',
-                            color: '#64748b',
+                            color: 'var(--text-dim)',
                             margin: '0.25rem 0 0',
                           }}
                         >
@@ -582,14 +697,14 @@ export default function BuscarDocumentosModule() {
                       <div
                         style={{
                           fontSize: '0.65rem',
-                          color: '#94a3b8',
+                          color: 'var(--text-muted)',
                           textAlign: 'right',
                         }}
                       >
                         <span
                           style={{
                             fontWeight: 700,
-                            color: '#60a5fa',
+                            color: 'var(--accent-light)',
                             fontSize: '0.8rem',
                           }}
                         >
@@ -600,25 +715,24 @@ export default function BuscarDocumentosModule() {
                           style={{
                             fontSize: '0.6rem',
                             marginTop: '0.125rem',
-                            color: '#64748b',
+                            color: 'var(--text-dim)',
                           }}
                         >
                           Páginas: {pages.join(', ')}
                         </div>
                       </div>
                       {isExpanded ? (
-                        <ChevronUp size={16} color="#94a3b8" />
+                        <ChevronUp size={16} color="var(--text-muted)" />
                       ) : (
-                        <ChevronDown size={16} color="#94a3b8" />
+                        <ChevronDown size={16} color="var(--text-muted)" />
                       )}
                     </div>
                   </button>
 
-                  {/* Conteúdo expandido */}
                   {isExpanded && (
                     <div
                       style={{
-                        borderTop: '1px solid rgba(59, 130, 246, 0.15)',
+                        borderTop: '1px solid var(--border-primary)',
                         padding: '0.75rem',
                         maxHeight: '500px',
                         overflowY: 'auto',
@@ -635,11 +749,10 @@ export default function BuscarDocumentosModule() {
                           <div
                             key={`${occ.field}-${occ.start}-${idx}`}
                             style={{
-                              background: 'rgba(15, 30, 58, 0.6)',
+                              background: 'var(--bg-input)',
                               borderRadius: '0.5rem',
                               padding: '0.75rem',
-                              border:
-                                '1px solid rgba(59, 130, 246, 0.1)',
+                              border: '1px solid var(--border-primary)',
                             }}
                           >
                             <div
@@ -655,7 +768,7 @@ export default function BuscarDocumentosModule() {
                               <span
                                 style={{
                                   fontSize: '0.65rem',
-                                  color: '#60a5fa',
+                                  color: 'var(--accent-light)',
                                   fontWeight: 600,
                                 }}
                               >
@@ -664,21 +777,21 @@ export default function BuscarDocumentosModule() {
                               <span
                                 style={{
                                   fontSize: '0.6rem',
-                                  color: '#94a3b8',
+                                  color: 'var(--text-muted)',
                                 }}
                               >
                                 campo:{' '}
-                                <strong style={{ color: '#cbd5e1' }}>
+                                <strong style={{ color: 'var(--text-secondary)' }}>
                                   {occ.field}
                                 </strong>{' '}
                                 • Página ~{occ.page} • Linha {occ.line}, Coluna{' '}
-                                {occ.column} • offset {occ.start}–{occ.end}
+                                {occ.column}
                               </span>
                             </div>
                             <div
                               style={{
                                 fontSize: '0.75rem',
-                                color: '#cbd5e1',
+                                color: 'var(--text-secondary)',
                                 lineHeight: 1.7,
                                 whiteSpace: 'pre-wrap',
                                 wordBreak: 'break-word',
@@ -702,13 +815,12 @@ export default function BuscarDocumentosModule() {
         </div>
       )}
 
-      {/* Mensagem inicial */}
       {!hasSearched && groupedResults.length === 0 && (
         <div
           style={{
             marginTop: '1.5rem',
             textAlign: 'center',
-            color: '#64748b',
+            color: 'var(--text-dim)',
             fontSize: '0.8rem',
           }}
         >
@@ -720,10 +832,8 @@ export default function BuscarDocumentosModule() {
 }
 
 // ============================================================
-// Renderização de snippet com highlight POSICIONAL
-// (não depende de nova busca textual — usa os offsets já calculados)
+// Renderização de snippet com highlight
 // ============================================================
-
 function renderSnippet(
   snippet: string,
   matchStart: number,
